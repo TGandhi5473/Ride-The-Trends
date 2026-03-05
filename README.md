@@ -27,7 +27,7 @@ In a digital landscape saturated with "AI Slop"—generic, low-value content gen
 ├── web-app/           # FastAPI backend & Next.js frontend
 ├── docker-compose.yml # Local Postgres + pgvector setup
 └── .env.example       # Template for local development
-
+```
 ## 🔐 Security & Production Setup
 
 ### 1. The GitHub Secrets Strategy
@@ -45,6 +45,7 @@ The `.gitignore` is configured to block `.env` files. To work locally, copy the 
 
 ```bash
 cp .env.example .env
+```
 ## 🛠️ Installation & Execution
 
 ### 1. Local Database Setup
@@ -52,7 +53,7 @@ Start the vector-enabled PostgreSQL instance using the pre-configured Docker ima
 
 ```bash
 docker-compose up -d
-
+```
 # Install dependencies
 pip install -r requirements.txt
 
