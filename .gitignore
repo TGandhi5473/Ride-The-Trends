@@ -1,0 +1,43 @@
+# .gitignore
+
+### --- SECRETS & CONFIG (CRITICAL) ---
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+secrets.py
+credentials.json
+
+### --- PYTHON ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+build/
+dist/
+*.egg-info/
+
+### --- MACHINE LEARNING & NLP ---
+# Ignore downloaded model weights (e.g., SentenceTransformers)
+.cache/
+.huggingface/
+models/
+*.bin
+*.onnx
+
+### --- DATABASE & DOCKER ---
+# Ignore local DB data (let Docker volumes handle persistence)
+postgres_data/
+*.sql.gz
+*.sqlite
+
+### --- OPERATING SYSTEM & IDE ---
+.DS_Store
+.vscode/
+.idea/
+*.swp
