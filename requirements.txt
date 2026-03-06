@@ -1,0 +1,8 @@
+fastapi
+uvicorn
+psycopg[binary]
+google-api-python-client
+atproto
+keybert
+sentence-transformers
+python-dotenv
