@@ -1,0 +1,34 @@
+services:
+  # HOT DATABASE: High-speed, Partitioned, Production DB
+  db_hot:
+    image: pgvector/pgvector:pg17
+    container_name: ride_trends_hot
+    restart: always
+    environment:
+      - POSTGRES_DB=ride_trends_prod
+      - POSTGRES_USER=admin
+      - POSTGRES_PASSWORD=password123
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./database/init/01_hot_schema.sql:/docker-entrypoint-initdb.d/01_hot_schema.sql
+      - hot_data:/var/lib/postgresql/data
+
+  # COLD DATABASE: Heavyweight ML Archive
+  db_cold:
+    image: pgvector/pgvector:pg17
+    container_name: ride_trends_cold
+    restart: always
+    environment:
+      - POSTGRES_DB=ride_trends_archive
+      - POSTGRES_USER=admin
+      - POSTGRES_PASSWORD=password123
+    ports:
+      - "5433:5432" # Mapped to 5433 to avoid conflict with Hot DB
+    volumes:
+      - ./database/init/02_cold_schema.sql:/docker-entrypoint-initdb.d/02_cold_schema.sql
+      - cold_data:/var/lib/postgresql/data
+
+volumes:
+  hot_data:
+  cold_data:
