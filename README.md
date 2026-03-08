@@ -16,19 +16,18 @@ In a digital landscape saturated with generic, low-value content, marketing team
 ---
 
 ## 🏗️ The Medallion Architecture
-We organize data into three distinct layers to ensure both historical integrity and real-time performance:
+The pipeline organizes data into three distinct layers to ensure historical integrity and real-time performance:
 
-| Layer | Component | Status | Purpose |
+| Layer | Component | Logic | Purpose |
 | :--- | :--- | :--- | :--- |
-| **🥉 Bronze** | **Cold Storage** | Raw | **The Safety Net.** Immutable copies of original API payloads. |
-| **🥈 Silver** | **NLP Engine** | Cleaned | **The Logic.** Filtered "Anti-Slop" data with extracted keywords. |
-| **🥇 Gold** | **Hot Partitions** | Optimized | **The Insight.** Vector embeddings ready for semantic search. |
+| **🥉 Bronze** | **Raw Ingestion** | JSON Payloads | **The Safety Net.** Immutable copies of original API responses. |
+| **🥈 Silver** | **Refinement** | BERT & Standardizers | **The Brain.** Standardized schema, AI classification, and Quarantine logic. |
+| **🥇 Gold** | **Aggregations** | SQL Views & Vectors | **The Insight.** Pre-calculated trends, market share, and semantic embeddings. |
 
 ### 🚀 The "Hot/Cold" Storage Strategy
 To balance high-speed retrieval with long-term ML research, the **Gold Layer** utilizes **PostgreSQL Native Partitioning**:
 * **Hot DB (Production):** Stores the most recent 30 days of data. This keeps indices small and vector searches near-instant.
 * **Cold DB (ML Archive):** At the end of each month, partitions are detached from the Hot DB and shipped to the heavyweight Archive DB for long-term trend analysis.
-
 ---
 
 ## 📂 Repository Structure
