@@ -7,9 +7,10 @@ from classifier import SocialClassifier
 def refine_bronze_to_silver():
     conn = get_connection()
     cur = conn.cursor()
-    classifier = SocialClassifier() # Initialize BERT once
+    classifier = SocialClassifier() # BERT Model for classification + embeddings
     
     # 1. INCREMENTAL LOAD
+    # We select records that haven't been processed into Silver or Quarantined yet
     query = """
         SELECT b.id, b.platform, b.target_topic, b.payload, b.ingested_at 
         FROM bronze_social_feeds b
@@ -37,11 +38,10 @@ def refine_bronze_to_silver():
                 author = payload['author'].get('handle')
                 views = 0
 
-            # Use our standardizer for cleaning
             content = clean_text(raw_content)
             norm_date = normalize_date(ingested_at, platform)
 
-            # Quality Gate
+            # Quality Gate: "Anti-Slop" Logic
             if not content or len(content) < 5:
                 raise ValueError("Content too short after cleaning")
 
@@ -62,31 +62,36 @@ def refine_bronze_to_silver():
                 VALUES (%s, %s, %s, %s)
             """, (b_id, platform, str(e), json.dumps(payload)))
 
-    # 3. BATCH AI CLASSIFICATION
+    # 3. BATCH AI PROCESSING (Classification + Embeddings)
     if valid_records:
         texts = [r['content'] for r in valid_records]
-        # One call to BERT for the whole batch
-        predictions = classifier.predict_batch(texts)
+        
+        # We retrieve both the labels and the high-dimensional vectors
+        # Note: classifier.predict_batch should now return (labels, embeddings)
+        predictions, embeddings = classifier.predict_batch_with_vectors(texts)
 
-        # 4. UPSERT INTO SILVER
+        # 4. UPSERT INTO SILVER WITH PGVECTOR SUPPORT
         for i, record in enumerate(valid_records):
             predicted_cat = predictions[i]
+            vector = embeddings[i].tolist() # Convert tensor/array to list for psycopg2
             
             cur.execute("""
                 INSERT INTO silver_social_posts 
-                (platform, source_id, author, content, view_count, raw_category, predicted_category, ingested_at)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                (platform, source_id, author, content, view_count, raw_category, 
+                 predicted_category, ingested_at, embedding)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (source_id) DO UPDATE SET 
                     view_count = EXCLUDED.view_count,
                     predicted_category = EXCLUDED.predicted_category,
+                    embedding = EXCLUDED.embedding,
                     processed_at = CURRENT_TIMESTAMP;
             """, (
                 record['platform'], record['source_id'], record['author'], 
                 record['content'], record['views'], record['raw_topic'], 
-                predicted_cat, record['ingested_at']
+                predicted_cat, record['ingested_at'], vector
             ))
 
     conn.commit()
     cur.close()
     conn.close()
-    logging.info(f"Refined {len(valid_records)} records, Quarantined {len(rows) - len(valid_records)}.")
+    logging.info(f"Refined {len(valid_records)} records with embeddings. Quarantined {len(rows) - len(valid_records)}.")
