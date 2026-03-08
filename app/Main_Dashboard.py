@@ -1,22 +1,58 @@
 import streamlit as st
-from utils.db_loaders import get_trend_metrics
 
-# 1. Page Config (Global settings)
-st.set_page_config(page_title="Ride The Trends", page_icon="🚀", layout="wide")
+# 1. Global Page Configuration
+# This carries over to all sub-pages defined in navigation
+st.set_page_config(
+    page_title="Ride The Trends | Anti-Slop Intelligence",
+    page_icon="🌊",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 
-# 2. Define Pages using the new Navigation API
-dashboard = st.Page("pages/1_📈_Trends.py", title="Trend Intelligence", icon=":material/trending_up:", default=True)
-audit_hub = st.Page("pages/2_🛡️_Audit_Hub.py", title="Audit Hub", icon=":material/security:")
+# 2. Define Page Objects
+# We point to the physical files in your /pages directory
+trends = st.Page(
+    "pages/1_📈_Trends.py", 
+    title="Trend Intelligence", 
+    icon=":material/trending_up:", 
+    default=True
+)
 
-# 3. Create Navigation Sidebar
+audit_hub = st.Page(
+    "pages/2_🛡️_Audit_Hub.py", 
+    title="Audit & Health", 
+    icon=":material/shield_with_heart:"
+)
+
+semantic_briefing = st.Page(
+    "pages/3_🎨_Semantic_Briefing.py", 
+    title="Semantic Briefing", 
+    icon=":material/psychology:"
+)
+
+# 3. Create Categorized Navigation
+# Grouping by user intent: Analytics vs. Creative vs. Engineering
 pg = st.navigation({
-    "Analytics": [dashboard],
-    "Operations": [audit_hub]
+    "Market Intelligence": [trends, semantic_briefing],
+    "Data Engineering": [audit_hub]
 })
 
-# 4. Shared Sidebar Elements (Visible on ALL pages)
-st.sidebar.title("Ride The Trends 2026")
-st.sidebar.info("Agentic RAG Pipeline: YouTube + Bluesky")
+# 4. Global Sidebar Elements
+# This content appears regardless of which page is currently active
+with st.sidebar:
+    st.title("Ride The Trends 🌊")
+    st.markdown("---")
+    st.overline("PIPELINE STATUS")
+    st.success("Ingestion: Active")
+    st.success("BERT Refiner: Online")
+    
+    st.markdown("---")
+    st.info("""
+    **Stack Overview:**
+    - **Engine:** Pandas 3.0 (Arrow)
+    - **Vector DB:** PostgreSQL + pgvector
+    - **Models:** BERT (Local)
+    """)
 
-# 5. Run the selected page
+# 5. Execute Router
 pg.run()
