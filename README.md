@@ -1,49 +1,49 @@
-# Ride The Trends: Anti-Slop Marketing Intelligence
+# 🌊 Ride The Trends: Anti-Slop Marketing Intelligence
 
-A professional-grade data pipeline that ingests trending topics from **YouTube** and **Bluesky**, processes them using **Local NLP (KeyBERT/Sentence-Transformers)**, and stores them in a **Postgres + pgvector** database for semantic search.
+**Ride The Trends** is a production-grade data engineering pipeline designed to transform raw social signals (YouTube & Bluesky) into high-utility creative insights. 
 
+By utilizing a **Medallion Architecture** (Bronze, Silver, Gold), this project solves the "trust gap" in AI. It provides a clear, auditable path from raw factual data to probabilistic generative insights, protecting creative teams from "AI Slop."
+
+---
 ## 💼 Business Case: Why Creative Teams Need This
-In a digital landscape saturated with "AI Slop"—generic, low-value content generated to farm algorithms—marketing and creative teams face a "Signal-to-Noise" crisis. Generic trend reports often recycle the same stale insights.
+In a digital landscape saturated with generic, low-value content, marketing teams face a "Signal-to-Noise" crisis. This project provides a competitive edge:
 
-**This project provides a competitive edge by:**
 * **Authenticity Mining:** By scraping the **AT Protocol (Bluesky)**, teams access raw, human-centric discourse that hasn't been sterilized by mainstream algorithmic filtering.
-* **Contextual Grounding:** Instead of guessing "why" a topic is trending, the **Anti-Slop Engine** extracts high-utility keywords, allowing copywriters to use the specific language and "slang" of a subculture accurately.
-* **Semantic Briefing:** Creative directors can use **Vector Search** to input a rough campaign idea and instantly see related real-world trends, ensuring every brief is grounded in current human sentiment rather than "hallucinated" AI trends.
-* **Cost Efficiency:** By running NLP models locally, the team avoids the recurring per-token costs of high-end LLM APIs while maintaining total data privacy for sensitive campaign planning.
+* **Contextual Grounding:** Instead of guessing "why" a topic is trending, the **Anti-Slop Engine** extracts high-utility keywords, allowing copywriters to use the specific language of a subculture accurately.
+* **Semantic Briefing:** Creative directors use **Vector Search** to input a campaign idea and instantly see related real-world trends, ensuring every brief is grounded in current human sentiment.
+* **Cost Efficiency & Privacy:** By running NLP models locally, the team avoids recurring per-token costs of LLM APIs while maintaining total data privacy for sensitive campaign planning.
 
+---
 
+## 🏗️ The Medallion Architecture
+We organize data into three distinct layers to ensure both historical integrity and real-time performance:
 
-## 🚀 Features
-- **BYOK (Bring Your Own Key) Architecture:** Securely managed via GitHub Secrets and environment variables.
-- **Anti-Slop Engine:** Filters generic AI-generated trends to find unique, high-utility keywords.
-- **Hybrid Search:** Combines traditional SQL filtering with Vector Semantic Search using `pgvector`.
-- **Decentralized Ingestion:** Leverages the AT Protocol (Bluesky) and YouTube Data API v3.
+| Layer | Component | Status | Purpose |
+| :--- | :--- | :--- | :--- |
+| **🥉 Bronze** | **Cold Storage** | Raw | **The Safety Net.** Immutable copies of original API payloads. |
+| **🥈 Silver** | **NLP Engine** | Cleaned | **The Logic.** Filtered "Anti-Slop" data with extracted keywords. |
+| **🥇 Gold** | **Hot Partitions** | Optimized | **The Insight.** Vector embeddings ready for semantic search. |
 
-### 🏗️ The "Hot/Cold" Storage Strategy
+### 🚀 The "Hot/Cold" Storage Strategy
+To balance high-speed retrieval with long-term ML research, the **Gold Layer** utilizes **PostgreSQL Native Partitioning**:
+* **Hot DB (Production):** Stores the most recent 30 days of data. This keeps indices small and vector searches near-instant.
+* **Cold DB (ML Archive):** At the end of each month, partitions are detached from the Hot DB and shipped to the heavyweight Archive DB for long-term trend analysis.
 
-To balance high-speed retrieval with long-term ML research, this project utilizes **PostgreSQL Native Partitioning**:
+---
 
-* **The Hot DB (Production):** Only stores the most recent 30 days of data. This keeps the indices small and vector searches near-instant.
-* **The Cold DB (ML Archive):** At the end of each month, the current partition is **detached** from the Hot DB and **shipped** to the heavyweight Archive DB for long-term trend analysis.
-
-## 🛠️ Project Structure
+## 📂 Repository Structure
 ```text
-├── data-ingestion/          # Ingestion workers (YouTube/Bluesky)
-│   └── worker.py            # Primary ingestion logic
-├── nlp-engine/              # 'Anti-Slop' keyword & vector logic
-│   └── processor.py         # Embedding & KeyBERT processing
-├── database/                # Database orchestration
-│   ├── init/                # Docker entrypoint SQL scripts
-│   │   ├── 01_hot_schema.sql    # Partitioned 'Hot' table setup
-│   │   └── 02_cold_schema.sql   # Unified 'Cold' archive table
-│   └── archive_manager.py   # Strategy 2: Detach & Ship automation
-├── web-app/                 # User interface
-│   ├── backend/             # FastAPI (Connects to Hot DB)
-│   └── frontend/            # Next.js Dashboard
-├── docker-compose.yml       # Orchestrates Hot DB and Cold DB containers
-├── .env.example             # Template for HOT_DB_URL and COLD_DB_URL
-├── .gitignore               # Prevents .env and local caches from syncing
-└── requirements.txt         # Project dependencies
+ride-the-trends/
+├── .github/workflows/   # Automation (GitHub Actions Hourly Ingestion)
+├── data-layers/
+│   ├── 1_bronze/        # Stage 1: Raw Ingestion (YouTube/Bluesky Scrapers)
+│   ├── 2_silver/        # Stage 2: NLP Processing (KeyBERT Anti-Slop)
+│   └── 3_gold/          # Stage 3: Vector Storage (Partitions & pgvector)
+├── web-app/
+│   ├── api/             # FastAPI Backend (The Brain)
+│   └── dashboard/       # Streamlit Observability Funnel (The Face)
+├── requirements.txt     # Dependencies (Python 3.10+)
+└── README.md            # Technical Manifesto
 ```
 ## 🔐 Security & Production Setup
 
@@ -58,30 +58,12 @@ All sensitive credentials must be added to **GitHub Secrets** to prevent leaks i
 | **HOT_DB_URL** | Connection string for the 30-day Production DB |
 | **COLD_DB_URL** | Connection string for the Heavyweight ML Archive DB |
 
-### 2. Local Environment Protection
-The `.gitignore` is configured to block `.env` files. To work locally, copy the example template:
-
-```bash
-cp .env.example .env
-```
-## 🛠️ Installation & Execution
-
-### 1. Local Database Setup
-Start the vector-enabled PostgreSQL instance using the pre-configured Docker image:
-
-```bash
-docker-compose up -d
-```
-# Install dependencies
+# Clone and install
+# Initialize database
+# Launch layers
+```text
 pip install -r requirements.txt
-
-# Run the ingestion worker to populate the database
-python -m data_ingestion.worker
-
-# Start FastAPI Backend
-uvicorn web-app.backend.main:app --reload
-
-# Start Next.js Frontend (in a separate terminal)
-cd web-app/frontend
-npm install
-npm run dev
+psql -f data-layers/3_gold/schema.sql
+uvicorn web-app.api.main:app --reload
+streamlit run web-app.dashboard.dashboard.py
+```
