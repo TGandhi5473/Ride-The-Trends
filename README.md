@@ -12,7 +12,7 @@ In a digital landscape saturated with generic, low-value content, marketing team
 * **Contextual Grounding:** Instead of guessing "why" a topic is trending, the **Anti-Slop Engine** extracts high-utility keywords, allowing copywriters to use the specific language of a subculture accurately.
 * **Semantic Briefing:** Creative directors use **Vector Search** to input a campaign idea and instantly see related real-world trends, ensuring every brief is grounded in current human sentiment.
 * **Cost Efficiency & Privacy:** By running NLP models locally, the team avoids recurring per-token costs of LLM APIs while maintaining total data privacy for sensitive campaign planning.
-
+* **Performance at Scale:** Utilizes **Pandas 3.0** with an **Arrow-backed engine** and **PostgreSQL Connection Pooling** to handle high-frequency social data with minimal latency.
 ---
 
 ## 🏗️ The Medallion Architecture
@@ -34,16 +34,16 @@ To balance high-speed retrieval with long-term ML research, the **Gold Layer** u
 ## 📂 Repository Structure
 ```text
 ride-the-trends/
-├── .github/workflows/   # Automation (GitHub Actions Hourly Ingestion)
-├── data-layers/
-│   ├── 1_bronze/        # Stage 1: Raw Ingestion (YouTube/Bluesky Scrapers)
-│   ├── 2_silver/        # Stage 2: NLP Processing (KeyBERT Anti-Slop)
-│   └── 3_gold/          # Stage 3: Vector Storage (Partitions & pgvector)
-├── web-app/
-│   ├── api/             # FastAPI Backend (The Brain)
-│   └── dashboard/       # Streamlit Observability Funnel (The Face)
-├── requirements.txt     # Dependencies (Python 3.10+)
-└── README.md            # Technical Manifesto
+├── 1_bronze/          # Stage 1: Raw Ingestion (YouTube/Bluesky Scrapers)
+├── 2_silver/          # Stage 2: NLP Processing (BERT Classification & Refinement)
+├── 3_gold/            # Stage 3: Aggregate SQL Views & Vector Storage (pgvector)
+├── app/               # UI LAYER (Streamlit 1.55)
+│   ├── Main_Dashboard.py # Entry Point & Navigation Router
+│   ├── pages/         # Dashboard Tabs (Trends, Audit Hub, Semantic Briefing)
+│   └── utils/         # DB Bridge (Pandas 3.0 + Arrow), Logic & UI Components
+├── .github/workflows/ # Automation (Hourly ingestion with BERT weight caching)
+├── database.py        # Central Postgres Connection Pooler
+└── requirements.txt   # Pinned March 2026 Dependencies (Pandas 3.0.1)
 ```
 ## 🔐 Security & Production Setup
 
@@ -58,12 +58,24 @@ All sensitive credentials must be added to **GitHub Secrets** to prevent leaks i
 | **HOT_DB_URL** | Connection string for the 30-day Production DB |
 | **COLD_DB_URL** | Connection string for the Heavyweight ML Archive DB |
 
-# Clone and install
-# Initialize database
-# Launch layers
-```text
+# Clone the repository
+git clone [https://github.com/TGandhi5473/ride-the-trends.git](https://github.com/TGandhi5473/ride-the-trends.git)
+cd ride-the-trends
+
+# Install dependencies (Pandas 3.0 + Arrow + Transformers 5.0)
 pip install -r requirements.txt
-psql -f data-layers/3_gold/schema.sql
-uvicorn web-app.api.main:app --reload
-streamlit run web-app.dashboard.dashboard.py
-```
+
+# Initialize Database Schema & pgvector
+psql -d your_db -f 3_gold/schema.sql
+
+# Launch Dashboard
+streamlit run app/Main_Dashboard.py
+
+📊 Observability: The Audit Hub
+Unlike standard dashboards, Ride The Trends includes a dedicated Audit Hub tab. This allows engineers and analysts to:
+
+Monitor Pipeline Success Rates: View the percentage of data successfully reaching Silver vs. those in Quarantine.
+
+Inspect Quarantined Payloads: View raw JSON from API failures to debug changes in social media schemas without touching the terminal.
+
+Visualize Model Distribution: Analyze the distribution of BERT classifications to identify potential bias or the need for model re-training.
