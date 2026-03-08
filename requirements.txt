@@ -1,8 +1,17 @@
-fastapi
-uvicorn
-psycopg[binary]
-google-api-python-client
-atproto
-keybert
-sentence-transformers
-python-dotenv
+# --- Core Framework ---
+streamlit==1.55.0          
+pandas==3.0.1              # Updated to stable March 2026 release
+pyarrow>=15.0.0            # Required for Pandas 3.0 optimized strings
+python-dotenv==1.0.1       
+
+# --- Database ---
+psycopg2-binary==2.9.10    
+
+# --- Machine Learning (BERT) ---
+transformers==5.0.0        
+torch==2.6.0               
+huggingface-hub==1.6.0     
+sentence-transformers==3.0.1 
+
+# --- Visuals & UI ---
+plotly==6.0.0
