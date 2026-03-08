@@ -1,13 +1,15 @@
 import json
 import logging
 from database import get_connection
+from standardizers import normalize_date, clean_text
+from classifier import SocialClassifier
 
 def refine_bronze_to_silver():
     conn = get_connection()
     cur = conn.cursor()
+    classifier = SocialClassifier() # Initialize BERT once
     
-    # 1. INCREMENTAL LOAD: Get only rows not yet in Silver
-    # We look for Bronze IDs that aren't in Silver or Quarantine
+    # 1. INCREMENTAL LOAD
     query = """
         SELECT b.id, b.platform, b.target_topic, b.payload, b.ingested_at 
         FROM bronze_social_feeds b
@@ -19,46 +21,72 @@ def refine_bronze_to_silver():
     cur.execute(query)
     rows = cur.fetchall()
 
+    valid_records = []
+    
     for b_id, platform, topic, payload, ingested_at in rows:
         try:
-            # 2. DATA QUALITY GATE: Essential checks
-            content = ""
-            source_id = ""
-            
+            # 2. STANDARDIZATION & EXTRACTION
             if platform == 'youtube':
-                content = payload['snippet'].get('title', '')
+                raw_content = payload['snippet'].get('title', '')
                 source_id = payload.get('id')
                 author = payload['snippet'].get('channelTitle')
                 views = int(payload['statistics'].get('viewCount', 0))
             else: # Bluesky
-                content = payload.get('text', '')
+                raw_content = payload.get('text', '')
                 source_id = payload.get('uri')
                 author = payload['author'].get('handle')
-                views = 0 # Bsky doesn't have "views" the same way
+                views = 0
 
-            # Validation Rule: Content must be at least 5 chars
+            # Use our standardizer for cleaning
+            content = clean_text(raw_content)
+            norm_date = normalize_date(ingested_at, platform)
+
+            # Quality Gate
             if not content or len(content) < 5:
-                raise ValueError("Content too short or missing")
+                raise ValueError("Content too short after cleaning")
 
-            # 3. UPSERT INTO SILVER
-            # (In reality, you'd call your BERT model here for predicted_category)
-            cur.execute("""
-                INSERT INTO silver_social_posts 
-                (platform, source_id, author, content, view_count, raw_category, ingested_at)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
-                ON CONFLICT (source_id) DO UPDATE SET 
-                    view_count = EXCLUDED.view_count,
-                    processed_at = CURRENT_TIMESTAMP;
-            """, (platform, source_id, author, content, views, topic, ingested_at))
+            valid_records.append({
+                "b_id": b_id,
+                "platform": platform,
+                "source_id": source_id,
+                "author": author,
+                "content": content,
+                "views": views,
+                "raw_topic": topic,
+                "ingested_at": norm_date
+            })
 
         except Exception as e:
-            # 4. QUARANTINE: Save failures instead of crashing
             cur.execute("""
                 INSERT INTO silver_quarantine (bronze_id, platform, error_reason, raw_payload)
                 VALUES (%s, %s, %s, %s)
             """, (b_id, platform, str(e), json.dumps(payload)))
 
+    # 3. BATCH AI CLASSIFICATION
+    if valid_records:
+        texts = [r['content'] for r in valid_records]
+        # One call to BERT for the whole batch
+        predictions = classifier.predict_batch(texts)
+
+        # 4. UPSERT INTO SILVER
+        for i, record in enumerate(valid_records):
+            predicted_cat = predictions[i]
+            
+            cur.execute("""
+                INSERT INTO silver_social_posts 
+                (platform, source_id, author, content, view_count, raw_category, predicted_category, ingested_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (source_id) DO UPDATE SET 
+                    view_count = EXCLUDED.view_count,
+                    predicted_category = EXCLUDED.predicted_category,
+                    processed_at = CURRENT_TIMESTAMP;
+            """, (
+                record['platform'], record['source_id'], record['author'], 
+                record['content'], record['views'], record['raw_topic'], 
+                predicted_cat, record['ingested_at']
+            ))
+
     conn.commit()
     cur.close()
     conn.close()
-    logging.info(f"Refined {len(rows)} records.")
+    logging.info(f"Refined {len(valid_records)} records, Quarantined {len(rows) - len(valid_records)}.")
