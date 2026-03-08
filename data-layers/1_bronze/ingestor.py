@@ -3,7 +3,11 @@ import logging
 from datetime import datetime, timezone
 from scrapers import BronzeScraper
 from database import save_to_bronze
+from database import init_landing_table
 
+if __name__ == "__main__":
+    init_landing_table() # Safely checks if table exists before starting
+    run_bronze_ingestion()
 # Setup logging to track our progress/errors
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
