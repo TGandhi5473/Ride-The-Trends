@@ -1,99 +1,47 @@
-import os
-import requests
-from atproto import Client
+import time
 
-class BronzeScraper:
-    def __init__(self):
-        # 1. YouTube Setup
-        self.yt_key = os.getenv("YOUTUBE_API_KEY")
-        
-        # We keep this as your "Fixed" map for targeted YouTube pulls
-        self.yt_category_map = {
-            "Film & Animation": "1",
-            "Autos & Vehicles": "2",
-            "Music": "10",
-            "Pets & Animals": "15",
-            "Sports": "17",
-            "Gaming": "20",
-            "People & Blogs": "22",
-            "Comedy": "23",
-            "Entertainment": "24",
-            "News & Politics": "25",
-            "Howto & Style": "26",
-            "Education": "27",
-            "Science & Technology": "28"
-        }
+def fetch_youtube_by_category(self, category_name):
+    cat_id = self.yt_category_map.get(category_name)
+    if not cat_id: return []
 
-        # 2. Bluesky Setup
-        self.bsky_client = Client()
-        self.bsky_client.login(
-            os.getenv("BSKY_HANDLE"), 
-            os.getenv("BSKY_PASSWORD")
-        )
-
-    # --- YouTube Methods ---
-
-    def fetch_youtube_by_category(self, category_name):
-        """Fetches top 50 videos for a specific YouTube category."""
-        cat_id = self.yt_category_map.get(category_name)
-        if not cat_id:
-            print(f"Category {category_name} not found in map.")
-            return []
-
-        url = (
-            f"https://www.googleapis.com/youtube/v3/videos?"
-            f"part=snippet,statistics&chart=mostPopular&regionCode=US"
-            f"&videoCategoryId={cat_id}&maxResults=50&key={self.yt_key}"
-        )
+    url = f"https://www.googleapis.com/youtube/v3/videos?part=snippet,statistics&chart=mostPopular&regionCode=US&videoCategoryId={cat_id}&maxResults=50&key={self.yt_key}"
+    
+    try:
         response = requests.get(url)
-        return response.json().get('items', [])
+        response.raise_for_status() # Check for 403/401/500 errors
+        data = response.json()
+        return data.get('items', [])
+    except requests.exceptions.RequestException as e:
+        print(f"YouTube API Failure: {e}")
+        # In a real pipeline, you'd log this to your 'Quarantine' log
+        return []
 
-    def fetch_youtube_global_popular(self):
-        """Fetches the overall top 50 across ALL categories in one call."""
-        url = (
-            f"https://www.googleapis.com/youtube/v3/videos?"
-            f"part=snippet,statistics&chart=mostPopular&regionCode=US"
-            f"&maxResults=50&key={self.yt_key}"
-        )
-        response = requests.get(url)
-        return response.json().get('items', [])
-
-    # --- Bluesky Methods ---
-
-    def fetch_bluesky_topics(self):
-        """
-        Fetches dynamic trending topics/hashtags from Bluesky.
-        Returns a list of topic names (strings).
-        """
-        try:
-            # Using the unspecced trending endpoint to get what's 'Hot' right now
-            trends = self.bsky_client.app.bsky.unspecced.get_trending_topics()
-            # Returns a list of trending topic objects; we just want the names
-            return [t.topic for t in trends.topics]
-        except Exception as e:
-            print(f"Error fetching Bluesky trends: {e}")
-            return []
-
-    def fetch_bluesky_by_topic(self, topic, max_results=100):
-        """
-        Fetches posts for a specific topic using pagination.
-        """
-        all_posts = []
-        cursor = None
-        
-        try:
-            while len(all_posts) < max_results:
-                params = {'q': topic, 'limit': 100, 'cursor': cursor}
-                fetched = self.bsky_client.app.bsky.feed.search_posts(params=params)
-                
-                all_posts.extend(fetched.posts)
-
-                if not fetched.cursor or len(fetched.posts) == 0:
-                    break
-                    
-                cursor = fetched.cursor
+def fetch_bluesky_by_topic(self, topic, max_results=100):
+    all_posts = []
+    cursor = None
+    
+    try:
+        while len(all_posts) < max_results:
+            # Use the proper params dict
+            fetched = self.bsky_client.app.bsky.feed.search_posts(
+                params={'q': topic, 'limit': 100, 'cursor': cursor}
+            )
             
-            return all_posts[:max_results]
-        except Exception as e:
-            print(f"Error searching Bluesky for {topic}: {e}")
-            return []
+            if not fetched.posts:
+                break
+                
+            # CRITICAL: Convert Object to Dictionary for your JSONB column
+            # .model_dump() is standard for Pydantic-based models in v2
+            batch = [post.model_dump() if hasattr(post, 'model_dump') else post.__dict__ for post in fetched.posts]
+            all_posts.extend(batch)
+
+            if not fetched.cursor:
+                break
+            
+            cursor = fetched.cursor
+            time.sleep(0.1) # Respectful backoff
+            
+        return all_posts[:max_results]
+    except Exception as e:
+        print(f"Bluesky Search Error: {e}")
+        return []
