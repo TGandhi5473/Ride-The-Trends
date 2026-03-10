@@ -1,17 +1,19 @@
 # --- Core Framework ---
 streamlit==1.55.0          
-pandas==3.0.1              # Updated to stable March 2026 release
-pyarrow>=15.0.0            # Required for Pandas 3.0 optimized strings
+pandas==3.0.1              # Stable Feb 2026 Release
+pyarrow>=15.0.0            # Essential for Pandas 3.0 StringDtype
 python-dotenv==1.0.1       
 
 # --- Database ---
 psycopg2-binary==2.9.10    
 
 # --- Machine Learning (BERT) ---
-transformers==5.0.0        
-torch==2.6.0               
+# Updated to 2026 stable releases for performance and security
+transformers==5.3.0        
+torch==2.10.0              # Features FlexAttention for faster inference
 huggingface-hub==1.6.0     
-sentence-transformers==3.0.1 
+sentence-transformers==5.2.3 # Includes critical security fixes
 
 # --- Visuals & UI ---
-plotly==6.0.0
+# 6.6.0 has better Narwhals integration for Pandas 3.0
+plotly==6.6.0
