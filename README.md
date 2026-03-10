@@ -55,15 +55,29 @@ A dedicated interface for **Human-in-the-Loop** machine learning.
 ## 📂 Repository Structure
 ```text
 ride-the-trends/
-├── 1_bronze/          # Stage 1: Raw Ingestion (YouTube/Bluesky Scrapers)
-├── 2_silver/          # Stage 2: NLP Processing (BERT Classification)
-├── 3_gold/            # Stage 3: Aggregate SQL Views & Vector Storage
-├── app/               # UI LAYER (Streamlit)
-│   ├── Main_Dashboard.py # Navigation & Global State
-│   └── pages/         # Trends, Audit Hub, & Semantic Briefing
-├── database.py        # Centralized Connection Pooler (psycopg2)
-├── classifier.py      # Local BERT Inference & Vectorization
-└── requirements.txt   # Pinned March 2026 Dependencies
+├── .github/workflows/
+│   ├── ingestion.yml          # Automated hourly ETL pipeline
+│   └── smoke_test.yml         # CI/CD for environment validation
+├── app/
+│   ├── pages/                 # All UI layers together up top
+│   │   ├── 1_📈_Trends.py     # Page 1: Home/Dashboard
+│   │   ├── 2_⚖️_Audit_Hub.py  # Page 2: HITL Refinement
+│   │   └── 3_🎨_Semantic_Briefing.py # Page 3: Deep-Dive
+│   └── Main.py                # Single entry point for the app
+├── data-layers/               # The Medallion Backend
+│   ├── 1_bronze/              # Raw API data
+│   ├── 2_silver/              # Cleaning & SocialClassifier logic
+│   │   └── classifier.py      
+│   └── 3_gold/                # Final pgvector & analytical views
+├── scripts/
+│   └── retrain_bert.py        # MLOps: Fine-tuning on Audit data
+├── tests/
+│   └── connectivity_check.py  # Smoke tests for Postgres & APIs
+├── config.py                  # Global Constants (Labels, Paths)
+├── database.py                # Shared DB Connection Pool
+├── requirements.txt           # Pinned 2026 production dependencies
+├── .env.example               # Template for secure API keys
+└── .gitignore                 # Prevents .env/pycache from leak
 ```
 🚀 Quick Start
 Clone & Install:
