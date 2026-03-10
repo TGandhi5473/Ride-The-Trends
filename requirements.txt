@@ -1,6 +1,6 @@
 # --- Core Framework ---
 streamlit==1.55.0          
-pandas==3.0.1              # Stable Feb 2026 Release
+pandas>=2.2.2,<3.0.0              # Stable Feb 2026 Release
 pyarrow>=15.0.0            # Essential for Pandas 3.0 StringDtype
 python-dotenv==1.0.1       
 
