@@ -21,3 +21,14 @@ CREATE TABLE IF NOT EXISTS silver_quarantine (
     raw_payload JSONB,
     failed_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE silver_human_labels (
+    id SERIAL PRIMARY KEY,
+    post_id VARCHAR(255) REFERENCES bronze_social_posts(id),
+    original_label VARCHAR(50),
+    corrected_label VARCHAR(50),
+    corrected_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Indexing for quick lookups during fine-tuning
+CREATE INDEX idx_human_labels_post_id ON silver_human_labels(post_id);
