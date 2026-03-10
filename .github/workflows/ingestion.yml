@@ -2,37 +2,35 @@ name: Ride The Trends Ingestion
 
 on:
   schedule:
-    # Runs at the start of every hour (UTC)
-    - cron: '0 * * * *'
+    - cron: '0 * * * *' # Hourly
   workflow_dispatch: 
-    # Manual trigger for testing
 
-# 🛡️ Least Privilege Security: Only allow reading repository contents
 permissions:
   contents: read
 
 jobs:
   ingest_and_process:
     runs-on: ubuntu-latest
-    # 🕒 Set a timeout to prevent runaway costs if a scraper hangs
     timeout-minutes: 15
     
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Set up Python 3.10
+      - name: Set up Python 3.12
         uses: actions/setup-python@v5
         with:
-          python-version: '3.10'
+          python-version: '3.12'
           cache: 'pip'
 
-      # ⚡ BERT Model Caching: Prevents re-downloading BERT weights every hour
+      # 🔥 Advanced BERT Caching: Keys off the model name AND the requirements
       - name: Cache BERT Weights
         uses: actions/cache@v4
         with:
           path: ~/.cache/huggingface
-          key: ${{ runner.os }}-bert-${{ hashFiles('**/requirements.txt') }}
+          key: ${{ runner.os }}-bert-v1-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-bert-v1-
 
       - name: Install Dependencies
         run: |
@@ -40,20 +38,19 @@ jobs:
           pip install -r requirements.txt
 
       - name: Run Ingestion Worker
-        # 🛡️ SECURITY: Scoping secrets to only the step that needs them
         env:
           HOT_DB_URL: ${{ secrets.HOT_DB_URL }}
           COLD_DB_URL: ${{ secrets.COLD_DB_URL }}
           YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
           BSKY_HANDLE: ${{ secrets.BSKY_HANDLE }}
           BSKY_PASSWORD: ${{ secrets.BSKY_PASSWORD }}
-          # Moved to ENV for better flexibility
           EMBEDDING_MODEL_NAME: "all-MiniLM-L6-v2"
-          # 🚩 Critical for HuggingFace/BERT in CI environments
           HF_HUB_DISABLE_PROGRESS_BARS: 1
+          # Prevents Python from writing .pyc files in the runner
+          PYTHONDONTWRITEBYTECODE: 1 
         run: python -m data_ingestion.worker
 
-      # 📈 Health Check: Notify if the ingestion fails
       - name: Notify on Failure
         if: failure()
-        run: echo "Ingestion failed! Check the Audit Hub in Streamlit for details."
+        run: |
+          echo "::error::Ingestion failed! Logs are available in the Actions tab."
