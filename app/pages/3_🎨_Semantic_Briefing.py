@@ -1,101 +1,67 @@
 import streamlit as st
-from sentence_transformers import SentenceTransformer
 from database import run_query
 from utils.components import section_header, platform_badge
+from silver.classifier import SocialClassifier # Shared model logic
 
-# 1. Page Configuration & Header
+# 1. Page Configuration
 section_header("🎨 Semantic Briefing Assistant", "Ground your campaign ideas in real-world human discourse.")
 
-# 2. Resource Caching
+# 2. Shared Resource Caching
 @st.cache_resource
-def load_embedding_model():
-    # Using the same 768-dim capable model as the refiner
-    return SentenceTransformer('all-MiniLM-L6-v2')
+def load_shared_classifier():
+    # This ensures we use the SAME 768-dim BERT model as the Refiner
+    return SocialClassifier()
 
-model = load_embedding_model()
+ai_engine = load_shared_classifier()
 
-# 3. Sidebar Instructions & DNA
+# 3. Sidebar: DNA & Performance Stats
 with st.sidebar:
     st.markdown("### 🧬 Vector Engine")
-    st.info("""
-    **How it works:**
-    - BERT converts your concept into a **768-dimension vector**.
-    - We use **pgvector** to bypass keyword matching and find *contextual* similarity.
-    - This protects briefs from 'AI Slop' by grounding them in actual human sentiment.
-    """)
+    st.info("Using **DistilBERT (768-dim)** for 1:1 semantic alignment with the Silver Layer.")
 
-# 4. Search Interface: Dual Input Modes
+# 4. Search Interface
 st.subheader("🕵️ Concept Matcher")
-mode = st.radio("Search Mode", ["Short Concept/Headline", "Full Campaign Brief"], horizontal=True)
-
-if mode == "Short Concept/Headline":
-    brief_input = st.text_input("Paste a competitor's headline or a specific trend:", 
-                                 placeholder="e.g., 'The rise of decentralized social media protocols'")
-else:
-    brief_input = st.text_area("Describe your campaign vibe/concept in detail:", 
-                                placeholder="e.g., 'A sustainable fashion campaign focusing on upcycled techwear for Gen-Z urban explorers'",
-                                help="More description leads to higher semantic accuracy.")
+brief_input = st.text_area("Describe your campaign vibe or paste a trend:", 
+                            placeholder="e.g., 'Decentralized social media protocols for privacy-conscious users'")
 
 limit = st.slider("Signals to retrieve:", 3, 10, 5)
 
-# 5. Execution Logic
 if brief_input:
-    with st.spinner("Analyzing human sentiment..."):
-        # Step A: Vectorize the user input
-        query_vector = model.encode(brief_input).tolist()
+    with st.spinner("Calculating semantic similarity..."):
+        # Use the SAME pooling strategy ([CLS] token) as the refiner
+        _, _, query_embeddings = ai_engine.predict_batch_with_vectors([brief_input])
+        query_vector = query_embeddings[0].tolist()
         
-        # Step B: Perform Cosine Distance search via Gold View
-        # Using (1 - distance) for a readable similarity percentage
+        # 5. Optimized SQL (Distance calculated once)
         query = """
-            SELECT 
-                predicted_category, 
-                content, 
-                platform, 
-                author,
-                (1 - (embedding <=> %s::vector)) as similarity_score
-            FROM gold_semantic_exploration
-            ORDER BY embedding <=> %s::vector
+            WITH similarity_search AS (
+                SELECT 
+                    final_category, content, platform, author,
+                    (1 - (embedding <=> %s::vector)) as score
+                FROM gold_semantic_exploration
+            )
+            SELECT * FROM similarity_search
+            WHERE score > 0.15 -- Minimum 'Relevance' floor
+            ORDER BY score DESC
             LIMIT %s
         """
         
-        results = run_query(query, (query_vector, query_vector, limit))
+        results = run_query(query, (query_vector, limit))
 
         # 6. Display Results
         if not results.empty:
-            st.success(f"Found {len(results)} relevant signals!")
-            
             for _, row in results.iterrows():
-                # Dynamic Border Color for Platform Identity
-                border_color = "#0085ff" if row['platform'] == 'bluesky' else "#ff0000"
+                # Color coding for platform identity
+                color = "#0085ff" if row['platform'] == 'bluesky' else "#ff0000"
                 
-                with st.container():
+                with st.container(border=True):
                     st.markdown(f"""
-                    <div style="
-                        border-left: 5px solid {border_color}; 
-                        padding: 15px; 
-                        background-color: #f8f9fa; 
-                        border-radius: 0 10px 10px 0; 
-                        margin-bottom: 20px;
-                    ">
-                        <div style="display: flex; justify-content: space-between; align-items: center;">
-                            <span style="font-size: 0.8em; color: gray;">
-                                {row['platform'].upper()} | <b>{row['predicted_category']}</b>
-                            </span>
-                            <span style="font-weight: bold; color: {border_color};">
-                                {row['similarity_score']:.1%} Match
-                            </span>
+                        <div style="display: flex; justify-content: space-between;">
+                            <span style="color: gray; font-size: 0.8em;">{row['platform'].upper()} | {row['final_category']}</span>
+                            <span style="color: {color}; font-weight: bold;">{row['score']:.1%} Match</span>
                         </div>
-                        <p style="font-style: italic; font-size: 1.1em; margin: 10px 0;">"{row['content']}"</p>
-                        <div style="text-align: right;">
-                            <span style="font-size: 0.8em; color: #555;">— {row['author']}</span>
-                        </div>
-                    </div>
+                        <p style="font-size: 1.1em; margin: 10px 0;">"{row['content']}"</p>
+                        <div style="text-align: right; color: #555; font-size: 0.8em;">— {row['author']}</div>
                     """, unsafe_allow_html=True)
-                    # Use component badge for extra visual flair
-                    platform_badge(row['platform'])
         else:
-            st.error("No relevant signals found in the 30-day Hot DB.")
-
-# 7. Footer
-st.divider()
-st.caption("This tool uses pgvector (HNSW) to find semantic overlaps in recent social signals.")
+            st.error("No relevant signals found. Try broadening your concept.")
