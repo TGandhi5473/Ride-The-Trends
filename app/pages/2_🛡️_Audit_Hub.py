@@ -1,93 +1,130 @@
 import streamlit as st
 import pandas as pd
-from utils.db_loaders import get_audit_summary, get_quarantine_data, get_niche_trends
-from utils.components import kpi_card, section_header
-from database import execute_action, run_query # Added for feedback logic
+import json
+from database import run_query, execute_action
 
-# 1. Page Header
-section_header("🛡️ Audit & Discovery Hub", "Monitor pipeline health and explore emerging niche trends.")
+# --- 1. PAGE CONFIG & HEADER ---
+st.markdown("# 🛡️ Audit & Discovery Hub")
+st.caption("Monitor pipeline health, inspect failures, and provide ground-truth labels for BERT retraining.")
+st.divider()
 
-# 2. Tabs for Separation of Concerns
-tab_audit, tab_discovery, tab_feedback = st.tabs(["📊 Pipeline Health", "🕵️ Niche Discovery", "🧠 BERT Feedback Loop"])
+# --- 2. TABS FOR SEPARATION OF CONCERNS ---
+tab_health, tab_discovery, tab_feedback = st.tabs([
+    "📊 Pipeline Health", 
+    "🕵️ Niche Discovery", 
+    "🧠 BERT Feedback Loop"
+])
 
-with tab_audit:
-    # --- ROW 1: HEALTH METRICS ---
-    summary = get_audit_summary()
-    col1, col2, col3 = st.columns(3)
+# --- TAB 1: PIPELINE HEALTH & QUARANTINE ---
+with tab_health:
+    # A. Global Metrics (Using Gold View)
+    st.subheader("System Performance")
+    health_df = run_query("SELECT * FROM gold_audit_summary;")
     
-    with col1:
-        kpi_card("Pipeline Success Rate", f"{summary['success_pct']}%")
-    with col2:
-        kpi_card("Total Processed", summary['total_count'])
-    with col3:
-        is_warning = summary['fail_count'] > 0
-        kpi_card("Quarantine Count", summary['fail_count'], is_error=is_warning)
-
-    st.divider()
-
-    # --- ROW 2: QUARANTINE EXPLORER ---
+    if not health_df.empty:
+        cols = st.columns(len(health_df))
+        for i, row in health_df.iterrows():
+            with cols[i]:
+                st.metric(
+                    label=f"{row['category']} ({row['platform']})",
+                    value=row['total_records'],
+                    delta=f"{row['avg_model_confidence']:.2%} Conf",
+                    delta_color="normal"
+                )
+    
+    st.markdown("---")
+    
+    # B. Quarantine Explorer
     st.subheader("🚩 Quarantine Inspection")
-    q_data = get_quarantine_data()
+    st.write("Records that failed schema validation or BERT inference.")
+    
+    q_data = run_query("SELECT id, platform, error_reason, failed_at, raw_payload FROM silver_quarantine WHERE resolved = FALSE LIMIT 50;")
 
     if not q_data.empty:
-        st.dataframe(q_data, use_container_width=True, hide_index=True)
+        # Display table without the heavy JSON column first
+        st.dataframe(q_data.drop(columns=['raw_payload']), use_container_width=True, hide_index=True)
+        
         selected_id = st.selectbox("Select a Failure ID to inspect raw JSON:", q_data['id'])
-        raw_json = q_data[q_data['id'] == selected_id]['raw_payload'].iloc[0]
-        st.json(raw_json)
+        if selected_id:
+            raw_json = q_data[q_data['id'] == selected_id]['raw_payload'].iloc[0]
+            # Handle potential string/dict conversion for st.json
+            payload_display = json.loads(raw_json) if isinstance(raw_json, str) else raw_json
+            st.json(payload_display)
+            
+            if st.button("Mark as Resolved"):
+                execute_action("UPDATE silver_quarantine SET resolved = TRUE WHERE id = %s", (selected_id,))
+                st.toast(f"Error {selected_id} marked as resolved.")
+                st.rerun()
     else:
-        st.success("Quarantine is empty! All systems nominal.")
+        st.success("✅ Quarantine is empty! All systems nominal.")
 
+# --- TAB 2: NICHE DISCOVERY (THE 'OTHER' BUCKET) ---
 with tab_discovery:
-    st.subheader("🔎 Emerging 'Other' Trends")
-    niche_df = get_niche_trends()
+    st.subheader("🔎 Emerging Niche Themes")
+    st.write("Aggregated topics that the current BERT model labeled as 'OTHER'.")
+    
+    # Refreshing the Materialized View (Pro Tip: This could be moved to a button)
+    if st.button("Refresh Discovery Engine"):
+        with st.spinner("Refreshing Materialized View..."):
+            execute_action("REFRESH MATERIALIZED VIEW CONCURRENTLY gold_niche_discovery;")
+            st.success("Discovery view updated!")
+
+    niche_df = run_query("SELECT raw_category, platform, mention_count, last_seen FROM gold_niche_discovery;")
 
     if not niche_df.empty:
-        st.dataframe(niche_df, use_container_width=True)
-        st.info("💡 **Insight:** Use these keywords to update your BERT classifier's label set.")
+        st.dataframe(niche_df, use_container_width=True, hide_index=True)
+        st.info("💡 **Retraining Candidate:** If a 'raw_category' has high counts, add it to your BERT Label Map.")
     else:
-        st.info("No significant recurring niche trends detected yet.")
+        st.info("No significant recurring niches detected yet. Continue scraping to build density.")
 
+# --- TAB 3: BERT FEEDBACK LOOP (HITL) ---
 with tab_feedback:
-    st.subheader("🛠️ Model Correction (HITL)")
-    st.write("Correcting 'Other' labels feeds the local retraining pipeline.")
+    st.subheader("🛠️ Active Learning Queue")
+    st.write("Human intervention for low-confidence AI predictions.")
 
-    # Fetching posts that need human review (labeled as 'Other' in Silver)
-    # We join with Bronze to get the actual text for the human to read
-    review_data = run_query("""
-        SELECT s.source_id, s.predicted_category, b.content 
+    # Optimized Query: Pulls from Silver where human hasn't labeled yet
+    review_queue = run_query("""
+        SELECT s.source_id, s.content, s.predicted_category, s.platform
         FROM silver_social_posts s
-        JOIN bronze_social_posts b ON s.source_id = b.id
-        WHERE s.predicted_category = 'Other'
+        LEFT JOIN silver_human_labels h ON s.source_id = h.post_id
+        WHERE s.predicted_category = 'OTHER' AND h.post_id IS NULL
         LIMIT 5
     """)
 
-    if not review_data.empty:
-        for index, row in review_data.iterrows():
+    if not review_queue.empty:
+        for _, row in review_queue.iterrows():
+            post_id = row['source_id']
             with st.container(border=True):
+                st.caption(f"Platform: {row['platform'].upper()} | ID: {post_id}")
                 st.write(f"**Content:** {row['content']}")
-                col_a, col_b = st.columns([2, 1])
                 
-                with col_a:
-                    new_label = st.selectbox(
-                        f"Correct label for {row['source_id']}:", 
-                        ["Tech", "Finance", "Lifestyle", "Slop/Spam"], 
-                        key=f"label_{row['source_id']}"
+                col_sel, col_btn = st.columns([3, 1])
+                with col_sel:
+                    choice = st.selectbox(
+                        "Correct Category:",
+                        ["Tech", "Finance", "Gaming", "Politics", "Slop/Spam"],
+                        key=f"hitl_{post_id}"
                     )
-                with col_b:
-                    if st.button("Submit", key=f"btn_{row['source_id']}"):
+                with col_btn:
+                    st.write(" ") # Spacer
+                    if st.button("Submit", key=f"sub_{post_id}", use_container_width=True):
                         execute_action("""
                             INSERT INTO silver_human_labels (post_id, original_label, corrected_label)
                             VALUES (%s, %s, %s)
-                        """, (row['source_id'], row['predicted_category'], new_label))
-                        st.toast(f"Logged {row['source_id']} as {new_label}!")
+                            ON CONFLICT (post_id) DO UPDATE SET corrected_label = EXCLUDED.corrected_label
+                        """, (post_id, row['predicted_category'], choice))
+                        st.toast("Label Saved!")
+                        st.rerun()
     else:
-        st.success("No posts currently require manual labeling.")
+        st.success("✨ All 'OTHER' posts have been reviewed. Model is aligned with Human Intelligence.")
 
     st.divider()
     
-    # Retraining Trigger
-    st.subheader("🔄 Model Synchronization")
-    if st.button("🧠 Sync Human Intelligence"):
-        with st.spinner("Retraining local BERT model weights..."):
-            # Logic for running your retraining script would go here
-            st.success("Model version v2.0 deployed locally! Accuracy expected to increase.")
+    # Model Synchronization Section
+    st.subheader("🔄 Model Deployment")
+    col_v, col_sync = st.columns([2, 1])
+    with col_v:
+        st.write("**Current Version:** `refined_bert_v2.0` (Local)")
+    with col_sync:
+        if st.button("Sync Intelligence", use_container_width=True):
+            st.warning("Triggering local retraining script... (Simulated)")
