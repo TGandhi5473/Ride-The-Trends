@@ -1,43 +1,79 @@
+import os
 import torch
-from transformers import pipeline
+import numpy as np
+from transformers import pipeline, AutoTokenizer, AutoModelForSequenceClassification
 
 class SocialClassifier:
     def __init__(self):
-        # Using a model that supports both classification and feature extraction
-        self.model_name = "distilbert-base-uncased"
-        self.pipe = pipeline("text-classification", model=self.model_name)
-        self.feature_extractor = pipeline("feature-extraction", model=self.model_name)
-        
-        # Expanded based on YouTube API Categories (1, 10, 17, 20, 25, 27, 28)
-        self.categories = [
-            "Finance", "Tech", "Gaming", "Politics", "Entertainment", 
-            "Education", "Science & Technology", "Sports", "Music", 
-            "Howto & Style", "Autos & Vehicles", "OTHER"
-        ]
+        # 1. Priority Loading Logic
+        self.local_path = "./app/models/refined_bert_v2"
+        self.base_model = "distilbert-base-uncased"
+        self.device = 0 if torch.cuda.is_available() else -1  # Pipeline uses 0 for GPU, -1 for CPU
 
-    def predict_batch(self, texts):
-        """Standard classification for simple labeling."""
-        results = self.pipe(texts)
-        return [res['label'] for res in results]
+        if os.path.isdir(self.local_path) and os.path.exists(f"{self.local_path}/config.json"):
+            print(f"🎯 Loading Fine-Tuned Model: {self.local_path}")
+            self.current_model = self.local_path
+        else:
+            print(f"🌐 Falling back to Base Model: {self.base_model}")
+            self.current_model = self.base_model
+
+        # 2. Initialize Pipelines
+        # Standard classification pipeline
+        self.classifier = pipeline(
+            "text-classification", 
+            model=self.current_model, 
+            device=self.device
+        )
+        
+        # Feature extraction for the 768-dim vectors (Gold Layer)
+        self.feature_extractor = pipeline(
+            "feature-extraction", 
+            model=self.current_model, 
+            device=self.device
+        )
+
+        # Labels mapping (Consistent with YouTube API and Retraining Script)
+        self.label_map = {0: "Finance", 1: "Tech", 2: "Gaming", 3: "Politics", 4: "OTHER"}
 
     def predict_batch_with_vectors(self, texts):
         """
-        NEW: Returns both labels and 768-dim embeddings.
-        Essential for the 'Semantic Briefing' Gold Layer feature.
+        Enrichment Layer: Returns labels, confidence, and 768-dim embeddings.
+        Essential for 'Semantic Briefing' and 'Audit Hub'.
         """
-        # 1. Get Labels
-        labels = self.predict_batch(texts)
-        
+        if not texts:
+            return [], [], []
+
+        # 1. Run Classification
+        # return_all_scores=True allows us to capture confidence levels
+        raw_results = self.classifier(texts)
+        labels = [res['label'] for res in raw_results]
+        confidences = [res['score'] for res in raw_results]
+
         # 2. Get Mean-Pooled Embeddings
-        # Feature extraction returns [batch, tokens, 768]
+        # raw_features shape: [batch, tokens, 768]
         raw_features = self.feature_extractor(texts)
         
         embeddings = []
         for feature in raw_features:
-            # We take the mean across the token dimension (dim 1) 
-            # to get a single 768-dim vector per text
             tensor_feat = torch.tensor(feature)
-            mean_vec = torch.mean(tensor_feat, dim=1).squeeze()
-            embeddings.append(mean_vec.numpy())
+            # Mean-pooling across the token dimension to get a fixed-size vector
+            mean_vec = torch.mean(tensor_feat, dim=1).squeeze().numpy()
+            embeddings.append(mean_vec)
             
-        return labels, embeddings
+        return labels, confidences, embeddings
+
+    def classify_and_filter(self, texts, threshold=0.45):
+        """
+        Adds the 'Other' logic: If confidence is too low, label as 'OTHER'
+        to trigger the Niche Discovery tab in the Audit Hub.
+        """
+        labels, confs, vectors = self.predict_batch_with_vectors(texts)
+        
+        final_labels = []
+        for label, conf in zip(labels, confs):
+            if conf < threshold:
+                final_labels.append("OTHER")
+            else:
+                final_labels.append(label)
+                
+        return final_labels, confs, vectors
