@@ -1,77 +1,84 @@
--- 0. Infrastructure Setup
+-- ==========================================
+-- 0. INFRASTRUCTURE & EXTENSIONS
+-- ==========================================
 CREATE EXTENSION IF NOT EXISTS vector;
 
--- Update the Silver source table to hold the 768-dimension BERT embeddings
-ALTER TABLE silver_social_posts 
-ADD COLUMN IF NOT EXISTS embedding vector(768);
+-- Ensure Silver is ready for Gold (Safeguard)
+ALTER TABLE silver_social_posts ADD COLUMN IF NOT EXISTS confidence FLOAT DEFAULT 0.0;
+ALTER TABLE silver_social_posts ADD COLUMN IF NOT EXISTS embedding vector(768);
 
--- Create a high-performance HNSW index for the Semantic Briefing feature
-CREATE INDEX ON silver_social_posts 
-USING hnsw (embedding vector_cosine_ops)
+-- HNSW Index for high-speed Semantic Search
+CREATE INDEX IF NOT EXISTS idx_silver_posts_embedding 
+ON silver_social_posts USING hnsw (embedding vector_cosine_ops)
 WITH (m = 16, ef_construction = 64);
 
--- 1. Trend Analysis (The 'Gold' Standard)
--- Refined to include average sentiment if available in your Silver layer
+-- ==========================================
+-- 1. SEMANTIC EXPLORATION (The Search Engine)
+-- ==========================================
+-- This view acts as the primary source for your Semantic Briefing.
+-- It uses COALESCE to prioritize your manual corrections over AI predictions.
+CREATE OR REPLACE VIEW gold_semantic_exploration AS
+SELECT 
+    s.id,
+    s.content, 
+    s.platform, 
+    s.author,
+    COALESCE(h.corrected_label, s.predicted_category) AS final_category,
+    s.confidence,
+    s.view_count,
+    s.ingested_at,
+    s.embedding
+FROM silver_social_posts s
+LEFT JOIN silver_human_labels h ON s.source_id = h.post_id;
+
+-- ==========================================
+-- 2. TREND & ENGAGEMENT METRICS
+-- ==========================================
 CREATE OR REPLACE VIEW gold_trend_metrics AS
 SELECT 
-    predicted_category,
+    final_category,
     platform,
-    COUNT(*) as post_count,
-    SUM(view_count) as total_reach,
-    ROUND(AVG(view_count), 2) as avg_engagement,
-    DATE_TRUNC('day', ingested_at) as trend_date,
-    -- We include a representative embedding for category-level trend matching
-    AVG(embedding) as category_centroid 
-FROM silver_social_posts
+    COUNT(*) AS post_count,
+    SUM(view_count) AS total_reach,
+    ROUND(AVG(view_count), 2) AS avg_engagement,
+    DATE_TRUNC('day', ingested_at) AS trend_date,
+    -- Concept Centroid: The "average" vector representing this category on this day
+    AVG(embedding) AS category_centroid 
+FROM gold_semantic_exploration
 GROUP BY 1, 2, 6
 ORDER BY trend_date DESC;
 
--- 2. Platform Market Share
-CREATE OR REPLACE VIEW gold_platform_market_share AS
-SELECT 
-    predicted_category,
-    platform,
-    COUNT(*) AS post_count,
-    ROUND(100.0 * COUNT(*) / SUM(COUNT(*)) OVER(PARTITION BY predicted_category), 2) AS share_pct
-FROM silver_social_posts
-GROUP BY 1, 2;
-
--- 3. Semantic Briefing & "Other" Exploration
--- Merged to allow creative directors to search specifically for niche "Other" signals
-CREATE OR REPLACE VIEW gold_semantic_exploration AS
-SELECT 
-    content, 
-    platform, 
-    author,
-    raw_category, 
-    ingested_at,
-    embedding, -- Required for pgvector similarity search
-    predicted_category
-FROM silver_social_posts
-ORDER BY ingested_at DESC;
-
--- 4. Pipeline Efficiency (Audit View)
-CREATE OR REPLACE VIEW gold_audit_summary AS
-SELECT 
-    predicted_category,
-    COUNT(*) as total_records,
-    ROUND(100.0 * COUNT(*) / SUM(COUNT(*)) OVER(), 2) as distribution_pct
-FROM silver_social_posts
-GROUP BY 1;
-
--- 5. Niche Discovery Engine (Materialized for Performance)
--- This aggregates the 'OTHER' bucket to find recurring themes
-CREATE MATERIALIZED VIEW gold_niche_discovery AS
+-- ==========================================
+-- 3. NICHE DISCOVERY ENGINE (Materialized)
+-- ==========================================
+-- Aggregates the 'OTHER' bucket to find recurring themes. 
+-- Must be refreshed: REFRESH MATERIALIZED VIEW gold_niche_discovery;
+CREATE MATERIALIZED VIEW IF NOT EXISTS gold_niche_discovery AS
 SELECT 
     raw_category,
     platform,
-    COUNT(*) as mention_count,
-    AVG(embedding) as theme_centroid, -- The "average" vector of this niche
-    MAX(ingested_at) as last_seen
-FROM silver_social_posts
-WHERE predicted_category = 'OTHER'
+    COUNT(*) AS mention_count,
+    AVG(embedding) AS theme_centroid,
+    MAX(ingested_at) AS last_seen
+FROM gold_semantic_exploration
+WHERE final_category = 'OTHER'
 GROUP BY 1, 2
-HAVING COUNT(*) > 5; -- Only surface recurring "Others"
+HAVING COUNT(*) > 5;
 
--- Index for the Discovery Engine
-CREATE INDEX ON gold_niche_discovery USING hnsw (theme_centroid vector_cosine_ops);
+CREATE INDEX IF NOT EXISTS idx_gold_niche_centroid 
+ON gold_niche_discovery USING hnsw (theme_centroid vector_cosine_ops);
+
+-- ==========================================
+-- 4. PIPELINE & AUDIT HEALTH
+-- ==========================================
+CREATE OR REPLACE VIEW gold_audit_summary AS
+SELECT 
+    final_category,
+    platform,
+    COUNT(*) AS total_records,
+    ROUND(AVG(confidence), 4) AS avg_model_confidence,
+    -- Tracks how many items in this category were manually corrected
+    COUNT(h.corrected_label) AS human_correction_count
+FROM silver_social_posts s
+LEFT JOIN silver_human_labels h ON s.source_id = h.post_id
+GROUP BY 1, 2;
