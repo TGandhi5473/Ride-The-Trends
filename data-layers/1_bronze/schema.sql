@@ -14,3 +14,13 @@ CREATE INDEX IF NOT EXISTS idx_bronze_payload_gin ON bronze_social_feeds USING G
 -- Standard B-Tree indices for fast filtering by platform and topic
 CREATE INDEX IF NOT EXISTS idx_bronze_platform ON bronze_social_feeds(platform);
 CREATE INDEX IF NOT EXISTS idx_bronze_topic ON bronze_social_feeds(target_topic);
+-- Add an External ID to help with idempotency/deduplication
+ALTER TABLE bronze_social_feeds 
+ADD COLUMN IF NOT EXISTS source_id VARCHAR(255); 
+
+-- Index for the source_id to prevent duplicates during the Silver transition
+CREATE INDEX IF NOT EXISTS idx_bronze_source_id ON bronze_social_feeds(source_id);
+
+-- Add a "Metadata" column for pipeline health (Optional but very "Senior")
+ALTER TABLE bronze_social_feeds 
+ADD COLUMN IF NOT EXISTS processing_status VARCHAR(20) DEFAULT 'pending'; -- 'pending', 'processed', 'quarantine'
