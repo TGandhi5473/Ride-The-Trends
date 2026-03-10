@@ -1,32 +1,37 @@
+import os
 import logging
-from database import get_connection
+from database import get_connection, release_connection
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
 
 def refresh_gold_layer():
-    """
-    In a simple setup, this just ensures the views are fresh.
-    In a 'Pro' setup, you would use this to refresh Materialized Views.
-    """
+    sql_path = '3_gold/schema.sql'
+    
+    if not os.path.exists(sql_path):
+        logging.error(f"❌ SQL file not found at {sql_path}")
+        return
+
     conn = get_connection()
     cur = conn.cursor()
     
     try:
-        logging.info("--- Refreshing Gold Layer Views ---")
+        logging.info("--- 🏗️  Rebuilding Gold Layer ---")
         
-        # We read the SQL file and execute it
-        with open('3_gold/schema.sql', 'r') as f:
-            cur.execute(f.read())
+        with open(sql_path, 'r') as f:
+            sql_script = f.read()
             
+        # psycopg2 handles the entire script as one multi-statement string
+        cur.execute(sql_script)
+        
         conn.commit()
-        logging.info("✅ Gold Layer Refreshed Successfully.")
+        logging.info("✅ Gold views and materialized indices refreshed.")
         
     except Exception as e:
-        logging.error(f"❌ Failed to refresh Gold Layer: {e}")
         conn.rollback()
+        logging.error(f"❌ Gold Layer Refresh Failed: {e}")
     finally:
         cur.close()
-        conn.close()
+        release_connection(conn) # Return to pool
 
 if __name__ == "__main__":
     refresh_gold_layer()
