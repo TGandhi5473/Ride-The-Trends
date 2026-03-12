@@ -95,4 +95,13 @@ Run Dashboard:
 ```text
 streamlit run app/Main_Dashboard.py
 ```
+🏛️ The Critique: Why "No dbt" is the Right Choice for an MVP
+1. The "Over-Engineering" Trap
+For a single-developer MVP, the primary goal is Time-to-Value (TTV). dbt adds a layer of abstraction (YAML configs, profile management, learning curve) that doesn't actually make your first 100 records "better." It only makes the 1,000,000th record "safer." At this stage, your schema.sql is a single source of truth that is easy to read and fast to deploy.
+
+2. Tight Coupling is Sometimes Better for Speed
+In an MVP, your Bronze and Silver layers are likely changing every hour as you tweak your scrapers. Having your schema logic in a simple SQL file allows you to DROP/CREATE and iterate instantly without worrying about dbt's state management or "Materialization" strategies.
+
+3. Infrastructure Overhead
+dbt requires its own environment, credentials, and CI/CD steps. For a "Local-First" project, adding dbt increases the "surface area" for bugs in the pipeline. Keeping it lean (Python + SQL) ensures your GitHub Actions remain fast and easy to debug.
 Engineer's Note: This isn't just another LLM wrapper. It's a Retrieval-Augmented Intelligence (RAI) tool designed for engineers who value data integrity and cost-efficiency. It prioritizes factual, human-generated social signals over machine-generated noise.
