@@ -1,7 +1,7 @@
 # 🌊 Ride-The-Trends: Creative Intelligence Engine
 High-Precision Trend Validation & AI Prompt Orchestration.
 
-# 🎯 The Philosophy (The "BaseballIQ" Rule)
+# 🎯 The Philosophy 
 In modern creative workflows, AI is often used to find trends, leading to hallucinations and "echo-chamber" content. Ride-The-Trends flips this:
 
 Deterministic Logic: SQL and Python calculate the "Score" (Confidence, Velocity, Cross-Platform Heat).
