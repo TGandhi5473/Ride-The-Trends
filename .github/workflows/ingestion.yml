@@ -11,7 +11,7 @@ permissions:
 jobs:
   ingest_and_process:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20 # Increased slightly to account for potential retraining
     
     steps:
       - name: Checkout Repository
@@ -23,7 +23,7 @@ jobs:
           python-version: '3.12'
           cache: 'pip'
 
-      # 🔥 Advanced BERT Caching: Kept from your original logic
+      # 🔥 BERT Caching: This is critical for the retraining step too!
       - name: Cache BERT Weights
         uses: actions/cache@v4
         with:
@@ -39,20 +39,24 @@ jobs:
 
       - name: Run Ingestion Worker
         env:
-          # Aligned with core/config.py variable names
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
           BSKY_HANDLE: ${{ secrets.BSKY_HANDLE }}
           BSKY_PASSWORD: ${{ secrets.BSKY_PASSWORD }}
-          # Keeping your NLP settings
           EMBEDDING_MODEL_NAME: "all-MiniLM-L6-v2"
           HF_HUB_DISABLE_PROGRESS_BARS: 1
           PYTHONDONTWRITEBYTECODE: 1 
           PYTHONPATH: .
-        # Running the unified worker we just wrote
         run: python worker.py
+
+      - name: Check for Retraining Need
+        if: success() # Only retrain if the data ingestion was successful
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          PYTHONPATH: .
+        run: python scripts/retrain_bert.py
 
       - name: Notify on Failure
         if: failure()
         run: |
-          echo "::error::Ingestion failed! Check the logs for QuotaExceeded errors."
+          echo "::error::Pipeline failed! Check logs for Database connectivity or BERT memory issues."
