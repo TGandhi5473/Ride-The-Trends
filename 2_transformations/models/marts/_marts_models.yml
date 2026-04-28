@@ -1,0 +1,18 @@
+version: 2
+
+models:
+  - name: fct_creative_prompts
+    description: "The final output table for the Streamlit dashboard and LLM engine."
+    columns:
+      - name: prompt_id
+        tests:
+          - unique
+          - not_null
+      - name: confidence_level
+        tests:
+          - accepted_values:
+              values: ['HIGH', 'MEDIUM'] # 'LOW' is filtered out in the SQL
+      - name: prompt_context
+        description: "The string fed into the LLM Enrichment Engine."
+        tests:
+          - not_null
