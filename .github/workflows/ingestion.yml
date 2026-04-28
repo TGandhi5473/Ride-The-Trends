@@ -23,7 +23,7 @@ jobs:
           python-version: '3.12'
           cache: 'pip'
 
-      # 🔥 Advanced BERT Caching: Keys off the model name AND the requirements
+      # 🔥 Advanced BERT Caching: Kept from your original logic
       - name: Cache BERT Weights
         uses: actions/cache@v4
         with:
@@ -39,18 +39,20 @@ jobs:
 
       - name: Run Ingestion Worker
         env:
-          HOT_DB_URL: ${{ secrets.HOT_DB_URL }}
-          COLD_DB_URL: ${{ secrets.COLD_DB_URL }}
+          # Aligned with core/config.py variable names
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
           YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
           BSKY_HANDLE: ${{ secrets.BSKY_HANDLE }}
           BSKY_PASSWORD: ${{ secrets.BSKY_PASSWORD }}
+          # Keeping your NLP settings
           EMBEDDING_MODEL_NAME: "all-MiniLM-L6-v2"
           HF_HUB_DISABLE_PROGRESS_BARS: 1
-          # Prevents Python from writing .pyc files in the runner
           PYTHONDONTWRITEBYTECODE: 1 
-        run: python -m data_ingestion.worker
+          PYTHONPATH: .
+        # Running the unified worker we just wrote
+        run: python worker.py
 
       - name: Notify on Failure
         if: failure()
         run: |
-          echo "::error::Ingestion failed! Logs are available in the Actions tab."
+          echo "::error::Ingestion failed! Check the logs for QuotaExceeded errors."
