@@ -28,3 +28,10 @@ Staging: Views (to minimize storage and stay agile).
 Intermediate: Tables (to cache complex cross-platform joins).
 
 Marts: Incremental (to keep Neon compute hours low by only processing new trends).
+
+5. LLM Strategy: Local-First Inference
+To maintain the "Zero-Cost Demo" status, the enrichment layer defaults to Ollama (Llama3.2-1B).
+
+Reasoning: Validated trends only require structural rewriting (Data -> Ad Hook), not deep reasoning. A 1B parameter model handles this task with 90% accuracy compared to GPT-4, at 0% of the cost.
+
+ROI: Moving to cloud-hosted LLMs for this specific use case represents a negative ROI due to the high volume of trend pulses generated daily.
