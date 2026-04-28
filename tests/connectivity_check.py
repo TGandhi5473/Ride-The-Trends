@@ -1,64 +1,94 @@
+import sys
 import os
-import psycopg2
 import requests
-from dotenv import load_dotenv
+from sqlalchemy import text
 
-load_dotenv()
+# Ensure core is accessible
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-def test_db():
-    print("--- 🗄️ Testing Database & pgvector ---")
+from core import Config, get_neon_engine, setup_logger
+
+logger = setup_logger("SmokeTest")
+
+def test_db_readiness():
+    """Checks connection, pgvector extension, and medallion schema."""
+    logger.info("--- 🗄️ Testing Database & pgvector Readiness ---")
     try:
-        conn = psycopg2.connect(os.getenv("HOT_DB_URL"), connect_timeout=5)
-        cur = conn.cursor()
-        
-        # 1. Check pgvector extension (Required for Gold Layer)
-        cur.execute("SELECT extname FROM pg_extension WHERE extname = 'vector';")
-        vector_exists = cur.fetchone()
-        if vector_exists:
-            print("✅ pgvector extension is enabled.")
-        else:
-            print("❌ pgvector NOT found. Run 'CREATE EXTENSION vector;' in your DB.")
+        engine = get_neon_engine()
+        with engine.connect() as conn:
+            # 1. Check pgvector (Crucial for Gold Layer embeddings)
+            vector_check = conn.execute(text(
+                "SELECT extname FROM pg_extension WHERE extname = 'vector';"
+            )).fetchone()
+            
+            if vector_check:
+                logger.info("✅ pgvector extension is enabled.")
+            else:
+                logger.warning("⚠️ pgvector NOT found. Run 'CREATE EXTENSION vector;' in Neon.")
 
-        # 2. Check if Medallion schema exists
-        cur.execute("SELECT to_regclass('public.bronze_social_posts');")
-        exists = cur.fetchone()[0]
-        if exists:
-            print("✅ Medallion schema (Bronze) detected.")
-        else:
-            print("⚠️ Table 'bronze_social_posts' not found. Ensure 3_gold/schema.sql was run.")
+            # 2. Check for Medallion Table existence
+            # Using your specific table name from the old script
+            table_check = conn.execute(text(
+                "SELECT to_regclass('public.bronze_social_posts');"
+            )).fetchone()
+            
+            if table_check[0]:
+                logger.info("✅ Medallion schema (Bronze) detected.")
+            else:
+                logger.error("❌ Table 'bronze_social_posts' missing. Run 3_gold/schema.sql.")
+                return False
         
-        cur.close()
-        conn.close()
+        logger.info("✅ Database Connectivity: SUCCESS")
+        return True
     except Exception as e:
-        print(f"❌ DB Connection Failed: {e}")
-        exit(1)
+        logger.error(f"❌ DB Connection Failed: {e}")
+        return False
 
 def test_external_apis():
-    print("\n--- 🌐 Testing API Authentication ---")
+    """Checks if API keys are valid by performing minimal no-cost requests."""
+    logger.info("\n--- 🌐 Testing API Authentication ---")
+    success = True
     
-    # YouTube Check
-    yt_key = os.getenv("YOUTUBE_API_KEY")
-    yt_url = f"https://www.googleapis.com/youtube/v3/videos?part=snippet&id=Ks-_Mh1QhMc&key={yt_key}"
-    yt_res = requests.get(yt_url, timeout=5)
-    
-    if yt_res.status_code == 200:
-        print("✅ YouTube API: Authorized.")
+    # YouTube Check: Minimalist request for a known video
+    if Config.YOUTUBE_API_KEY:
+        yt_url = (
+            f"https://www.googleapis.com/youtube/v3/videos"
+            f"?part=id&id=Ks-_Mh1QhMc&key={Config.YOUTUBE_API_KEY}"
+        )
+        yt_res = requests.get(yt_url, timeout=5)
+        if yt_res.status_code == 200:
+            logger.info("✅ YouTube API: Authorized.")
+        else:
+            logger.error(f"❌ YouTube API Failed: {yt_res.status_code}")
+            success = False
     else:
-        print(f"❌ YouTube API Failed: {yt_res.status_code}")
-        exit(1)
+        logger.error("❌ YouTube API Key missing from environment.")
+        success = False
 
-    # Bluesky Check (Smoke test for handle existence)
-    bsky_handle = os.getenv("BSKY_HANDLE")
-    if bsky_handle:
-        bsky_url = f"https://bsky.social/xrpc/com.atproto.identity.resolveHandle?handle={bsky_handle}"
+    # Bluesky Check: Resolving handle to prove existence
+    if Config.BSKY_HANDLE:
+        bsky_url = (
+            f"https://bsky.social/xrpc/com.atproto.identity.resolveHandle"
+            f"?handle={Config.BSKY_HANDLE}"
+        )
         bsky_res = requests.get(bsky_url, timeout=5)
         if bsky_res.status_code == 200:
-            print(f"✅ Bluesky: Handle '{bsky_handle}' resolved.")
+            logger.info(f"✅ Bluesky: Handle '{Config.BSKY_HANDLE}' resolved.")
         else:
-            print(f"❌ Bluesky: Could not resolve handle '{bsky_handle}'.")
-            exit(1)
+            logger.error(f"❌ Bluesky: Could not resolve handle.")
+            success = False
+    else:
+        logger.error("❌ Bluesky credentials missing from environment.")
+        success = False
+
+    return success
 
 if __name__ == "__main__":
-    test_db()
-    test_external_apis()
-    print("\n🚀 ALL SYSTEMS GO: Environment is verified for production run.")
+    db_ok = test_db_readiness()
+    api_ok = test_external_apis()
+    
+    if not db_ok or not api_ok:
+        logger.error("\n💀 Smoke Test Failed. Environment is NOT production-ready.")
+        sys.exit(1)
+        
+    logger.info("\n🚀 ALL SYSTEMS GO: Environment verified for production run.")
