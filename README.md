@@ -41,27 +41,34 @@ Cleanup: Once the PR is merged, the branch is deleted. No local .env files, no s
 
 ```
 📂 Repo Structure
-Plaintext
 Ride-The-Trends/
-├── 1_ingestion/              # PYTHON: Collectors & Circuit Breakers
+├── 1_ingestion/              # BRONZE: Collectors & Circuit Breakers
 │   ├── base_scraper.py       # Abstract Base Class with Quota Logic
 │   ├── youtube_scraper.py    # YT Data API v3 Implementation
 │   ├── bluesky_scraper.py    # AT Protocol Implementation
 │   └── worker.py             # Orchestrator (The "Heartbeat")
-├── 2_transformations/        # DBT: The "Umpire" (Logic & Validation)
+├── 2_transformations/        # SILVER: dbt (Logic & Validation)
 │   ├── models/
 │   │   ├── staging/          # stg_yt.sql, stg_bsky.sql (Flattening)
 │   │   ├── intermediate/     # int_validated_trends.sql (The Brain)
 │   │   └── marts/            # fct_creative_prompts.sql (The Output)
-│   ├── dbt_project.yml       # Project config & HML thresholds
-├── 3_app/                    # STREAMLIT: The "Cockpit" (UI)
+│   └── dbt_project.yml       # Project config & HML thresholds
+├── 3_app/                    # GOLD: STREAMLIT (The Cockpit)
 │   ├── app.py                # Main Discovery Dashboard
 │   └── pages/                # 1_Trend_Discovery, 2_Audit_Hub
-├── core/                     # SHARED: Infrastructure
-│   ├── database.py           # Pooled Neon Connections
-│   └── config.py             # Centralized Environment Variables
-├── scripts/                  # HITL: BERT Retraining logic
-├── .github/workflows/        # CI/CD: Ingestion Pulse & Smoke Tests
+├── core/                     # SHARED: The "Shield & Skeleton"
+│   ├── __init__.py           # Package exports
+│   ├── config.py             # Single source of truth (Env/Paths)
+│   ├── database.py           # Pooled Neon/SQLAlchemy connections
+│   ├── exceptions.py         # Custom error types (Quota, DB, etc.)
+│   └── logger.py             # Structured logging for CI/CD
+├── scripts/                  # HITL: Model Intelligence
+│   └── retrain_bert.py       # 0-cost CPU Fine-tuning logic
+├── .github/workflows/        # CI/CD: Automated Pipelines
+│   ├── ingestion.yml         # Hourly pulse & retraining trigger
+│   └── smoke_test.yml        # Connectivity & Schema validator
+├── models/                   # Local storage for refined BERT weights
+└── requirements.txt          # Production dependencies
 ```
 
 🏛️ Architectural Integrity
