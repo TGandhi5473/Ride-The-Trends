@@ -1,57 +1,74 @@
-import logging
-import os
-from typing import List
-from core.database import save_to_bronze_batch  # Centralized Neon connector
-from .youtube_scraper import YouTubeScraper
-from .bluesky_scraper import BlueskyScraper
-
-# Configure logging for professional observability
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+from core import (
+    Config, 
+    ScraperFactory, 
+    save_to_bronze_batch, 
+    setup_logger,
+    QuotaExceededError,
+    RideTheTrendsError
 )
-logger = logging.getLogger("IngestionWorker")
+
+# 1. Standardized Observability via core.logger
+logger = setup_logger("IngestionWorker")
 
 def run_pipeline():
     """
-    Main orchestration loop with Quota Guard logic.
-    Ensures zero billing risk by monitoring API unit consumption.
+    Main orchestration loop with merged Quota Guard logic.
+    Refactored to use the 'core' library for Medallion Architecture compliance.
     """
-    # 1. Define high-intent topics for Creative Teams
-    target_topics = ["AI tools", "Sustainable Fashion", "Digital Nomad Life"]
+    logger.info("🚀 Starting Trend Ingestion Pulse...")
     
-    # 2. Initialize Scrapers with Quota Thresholds
-    # YouTube has a 10,000 unit free limit; we cap at 9,000 to be safe.
-    scrapers = [
-        YouTubeScraper(),
-        BlueskyScraper()
-    ]
+    # Using your high-intent topics from the old worker
+    target_topics = Config.DEFAULT_TOPICS 
+    platform_names = ["youtube", "bluesky"]
+    
+    # Initialize Scrapers via Factory (Factory handles API keys internally)
+    scrapers = [ScraperFactory.get_scraper(p) for p in platform_names]
 
     for topic in target_topics:
         logger.info(f"--- 🌊 Starting Topic Run: {topic} ---")
         
         for scraper in scrapers:
-            # Check if the scraper has already disabled itself due to quota
+            # PRESERVED: Quota Guard logic from your previous version
             if hasattr(scraper, 'is_active') and not scraper.is_active:
-                logger.warning(f"⏭️ Skipping {scraper.platform}: Quota limit reached in this session.")
+                logger.warning(f"⏭️ Skipping {scraper.platform}: Quota limit reached.")
                 continue
 
-            # The .run() method (inherited from BaseScraper) executes the logic
-            batch_data = scraper.run(topic)
-            
-            if batch_data:
-                try:
-                    # High-speed batch insert into Neon
-                    save_to_bronze_batch(batch_data)
-                    logger.info(f"✅ Ingested {len(batch_data)} records from {scraper.platform}")
-                except Exception as e:
-                    logger.error(f"❌ Database write failed for {scraper.platform}: {e}")
-            else:
-                # This could trigger if the API returned 403 or the Quota Guard tripped
-                logger.warning(f"⚠️ No data ingested for {scraper.platform} on topic: {topic}")
+            try:
+                logger.info(f"📡 Scraping {scraper.platform} for: {topic}")
+                
+                # The .run() method executes the logic and returns standardized list
+                raw_data = scraper.run(topic)
+                
+                if raw_data:
+                    # Map to Bronze schema: platform, topic, payload
+                    batch_to_save = [
+                        {
+                            "platform": scraper.platform,
+                            "target_topic": topic,
+                            "payload": record
+                        } for record in raw_data
+                    ]
+                    
+                    # PRESERVED: High-speed batch insert into Neon
+                    save_to_bronze_batch(batch_to_save)
+                    logger.info(f"✅ Ingested {len(batch_to_save)} records from {scraper.platform}")
+                else:
+                    logger.warning(f"⚠️ No data found for {scraper.platform} on topic: {topic}")
 
-    logger.info("🏁 Pipeline run complete. Connections closed.")
+            except QuotaExceededError as e:
+                # If a specific scraper hits a limit, it marks itself inactive
+                scraper.is_active = False 
+                logger.error(f"🛑 {e}")
+                continue
+            
+            except RideTheTrendsError as e:
+                logger.error(f"⚠️ Specialized Error in {scraper.platform}: {e}")
+                continue
+            
+            except Exception as e:
+                logger.error(f"💀 Unexpected Failure: {e}")
+
+    logger.info("🏁 Pipeline run complete. Connections pooled and safe.")
 
 if __name__ == "__main__":
-    # Standard entry point for GitHub Actions cron jobs
     run_pipeline()
