@@ -1,0 +1,17 @@
+version: 2
+
+models:
+  - name: int_validated_trends
+    columns:
+      - name: target_topic
+        tests:
+          - [cite_start]not_null [cite: 57]
+      - name: confidence_level
+        tests:
+          - accepted_values:
+              [cite_start]values: ['HIGH', 'MEDIUM', 'LOW'] [cite: 58]
+
+  - name: fct_creative_prompts
+    tests:
+      - unique:
+          [cite_start]column_name: prompt_id [cite: 57]
