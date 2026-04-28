@@ -1,0 +1,24 @@
+version: 2
+
+models:
+  - name: stg_yt
+    description: "Flattened YouTube video metadata for creative analysis."
+    columns:
+      - name: source_id
+        description: "The unique YouTube Video ID."
+        tests:
+          - not_null
+          - unique
+      - name: occurred_at
+        description: "Standardized published timestamp."
+        tests:
+          - not_null
+
+  - name: stg_bsky
+    description: "Standardized Bluesky post data from the firehose."
+    columns:
+      - name: source_id
+        description: "The unique AT Protocol URI."
+        tests:
+          - not_null
+          - unique
