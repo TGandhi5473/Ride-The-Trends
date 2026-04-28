@@ -1,21 +1,40 @@
 -- models/marts/fct_creative_prompts.sql
-{{ config(materialized='incremental', unique_key='target_topic') }}
+{{ config(
+    materialized='incremental',
+    unique_key='prompt_id',
+    on_schema_change='fail'
+) }}
 
-with validated as (
-    select * from {{ ref('int_validated_trends') }}
-    where confidence_level in ('HIGH', 'MEDIUM') -- Filter for quality [cite: 28]
+WITH validated_source AS (
+    SELECT 
+        target_topic,
+        confidence_level,
+        platform_count,
+        total_mentions,
+        latest_pulse
+    FROM {{ ref('int_validated_trends') }}
+    WHERE confidence_level IN ('HIGH', 'MEDIUM') -- Filter for quality
+),
+
+final_enrichment AS (
+    SELECT
+        -- Surrogate key ensures we track every unique trend pulse
+        {{ dbt_utils.generate_surrogate_key(['target_topic', 'latest_pulse']) }} AS prompt_id,
+        target_topic,
+        confidence_level,
+        latest_pulse AS validated_at,
+        
+        -- MERGED PROMPT: Combining your Creative Director role-play with deterministic data
+        'Act as a creative director. Generate 3 ad hooks and a short script for "' || target_topic || '". ' ||
+        'Context: This topic is trending with ' || confidence_level || ' confidence across ' || 
+        platform_count || ' platforms (YouTube & Bluesky).' AS llm_prompt_template
+        
+    FROM validated_source
 )
 
-select
-    {{ dbt_utils.generate_surrogate_key(['target_topic', 'latest_pulse']) }} as prompt_id,
-    target_topic,
-    confidence_level,
-    latest_pulse as validated_at,
-    -- Pre-structuring the context for the LLM [cite: 4, 14]
-    'Act as a creative director. Generate 3 ad hooks for ' || target_topic || 
-    ' based on trending discussions on YouTube and Bluesky.' as llm_prompt_template
-from validated
+SELECT * FROM final_enrichment
 
 {% if is_incremental() %}
-    where latest_pulse > (select max(validated_at) from {{ this }})
+    -- Only process pulses newer than the most recent one in the mart
+    WHERE validated_at > (SELECT MAX(validated_at) FROM {{ this }})
 {% endif %}
