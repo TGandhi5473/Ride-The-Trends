@@ -1,0 +1,21 @@
+version: 2
+
+models:
+  - name: int_validated_trends
+    description: "The primary engine logic that joins platforms and scores trend confidence."
+    columns:
+      - name: target_topic
+        tests:
+          - not_null
+      - name: confidence_level
+        description: "Deterministic HML score based on platform overlap."
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['HIGH', 'MEDIUM', 'LOW']
+      - name: platform_count
+        description: "Number of unique sources confirming the trend."
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 1
+              max_value: 2 # Since we currently only have YT and BSKY
