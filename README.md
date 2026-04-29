@@ -1,5 +1,7 @@
 # 🌊 Ride-The-Trends: Creative Intelligence Engine
 High-Precision Trend Validation & AI Prompt Orchestration.
+# Why I built this:
+I built this to make prompting and prototyping faster. This engine is not meant to replace human creativity, but to leverage human output in a way that minimizes repetitive interactions with AI. It allows creative teams to prototype more passively by presenting only the highest-signal trends, pre-scored by an intelligent critic. The output of these results should then be fed into other AI tools like SeedDance to make the actual ad/shorts. 
 
 # 🎯 The Philosophy
 In modern creative workflows, AI is often used to find trends, leading to hallucinations and "echo-chamber" content. Ride-The-Trends flips this:
@@ -19,16 +21,29 @@ Safety: Integrated Quota Guard logic to ensure zero-billing risk by tracking API
 Storage: Raw JSONB landing tables in Neon.
 
 # 2. ⬜ Silver (Transformation) - dbt
-Staging: Flattening and type-casting raw JSON payloads into structured relational tables.
-
-Intermediate: The "Brain" of the project. This layer performs Cross-Platform Validation. If a topic trends on both YT and Bluesky, its "Heat" score increases.
-
 Governance: Automated dbt tests to ensure data integrity before any creative sees the output.
+
+Staging: stg_human_feedback.sql – Flattening and type-casting raw JSON payloads into structured relational tables.
+A new staging model that pulls raw "Approve/Reject" events and BERT scores from the Streamlit app. It initially returns an empty schema (using a UNION ALL with a dummy filter) until the first user interaction is logged.
+
+Intermediate: int_model_performance.sql – The "Brain" of the project. This layer performs Cross-Platform Validation. If a topic trends on both YT and Bluesky, its "Heat" score increases.
+Joins the stg_validated_trends with stg_human_feedback. This calculates the "delta" between what BERT predicted and what the human liked, effectively creating a "Correction Layer" for the trend scores.
 
 # 3. 🟨 Gold (Intelligence) - LLM Enrichment
 Marts: Final analytical tables optimized for the UI.
 
 The Prompt Engine: A specialized view that feeds validated trend data into an LLM (via LangChain/Ollama) to generate "Production-Ready" ad hooks and scripts.
+
+# 🧠 The Intelligence Loop (Actor-Critic Framework)
+To prevent low-quality AI "slop," we implement a dual-model orchestration layer:
+
+The Actor (Ollama 1B): Receives the dbt-validated trend and generates 3 creative ad hooks.
+
+The Critic (DistilBERT): A fine-tuned classifier that scores each hook for "Viral Potential" and "Brand Alignment."
+
+Human-in-the-Loop (HITL): Users "Approve" or "Reject" hooks in the Streamlit UI. This feedback is joined back to the dbt Gold layer and stored as training data.
+
+Continuous Refinement: When 50+ new labels are collected, a GitHub Action triggers retrain_bert.py, fine-tuning the Critic to better match the user's creative taste.
 
 # 🚀 The "Zero-Env" CI/CD Workflow
 We leverage Neon Branching to treat our database like a Git branch.
