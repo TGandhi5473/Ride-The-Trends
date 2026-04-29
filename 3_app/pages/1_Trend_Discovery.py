@@ -1,14 +1,33 @@
 import streamlit as st
 import pandas as pd
+from sqlalchemy import text
 from core.database import get_neon_engine
 from utils.llm_engine import generate_creative_assets, get_critic_score
 
 st.set_page_config(page_title="Trend Discovery", page_icon="🎯", layout="wide")
 
-def fetch_gold_prompts():
-    """Helper to pull validated data from the Gold Layer."""
+def save_feedback(prompt_id, hook_text, is_good):
+    """
+    Persists user validation to the gold.human_feedback table.
+    This data is the 'fuel' for the BERT retraining script.
+    """
     engine = get_neon_engine()
-    # Pulling from the specialized Marts view
+    label = 1 if is_good else 0
+    query = text("""
+        INSERT INTO gold.human_feedback (prompt_id, text, label_id, used_for_training) 
+        VALUES (:pid, :txt, :lbl, FALSE)
+    """)
+    try:
+        with engine.begin() as conn:
+            conn.execute(query, {"pid": prompt_id, "txt": hook_text, "lbl": label})
+        return True
+    except Exception as e:
+        st.error(f"Failed to save feedback: {e}")
+        return False
+
+def fetch_gold_prompts():
+    """Pulls validated trend data from the dbt Gold Layer."""
+    engine = get_neon_engine()
     query = "SELECT * FROM analytics.fct_creative_prompts ORDER BY validated_at DESC"
     try:
         return pd.read_sql(query, engine)
@@ -23,11 +42,10 @@ def show_discovery():
     df = fetch_gold_prompts()
 
     if df.empty:
-        st.warning("No validated trends found. Check your dbt/Ingestion pipelines.")
+        st.warning("No validated trends found. Ensure your dbt pipeline has run.")
         return
 
     for _, trend in df.iterrows():
-        # Create a unique key for the button to prevent state conflicts
         unique_key = f"btn_{trend['prompt_id']}"
         
         with st.container(border=True):
@@ -36,14 +54,13 @@ def show_discovery():
             with col1:
                 st.subheader(f"Topic: {trend['target_topic']}")
                 
-                # Metadata Metrics
+                # Metadata Badges
                 m1, m2, m3 = st.columns(3)
                 m1.metric("Confidence", trend['confidence_level'])
                 m2.metric("Heat Score", f"{trend.get('heat_score', 0)}/100")
                 m3.metric("Status", "Validated" if trend['confidence_level'] != 'Low' else "Draft")
                 
-                with st.expander("🔍 Show Logic & Prompt Template"):
-                    st.caption("This template is fed into Ollama 1B for hook generation.")
+                with st.expander("🔍 View Prompt Logic"):
                     st.code(trend['llm_prompt_template'], language="markdown")
             
             with col2:
@@ -51,32 +68,43 @@ def show_discovery():
                 if st.button("✨ Generate & Validate", key=unique_key, use_container_width=True):
                     with st.spinner("Ollama (Actor) + BERT (Critic) working..."):
                         
-                        # 1. Generate via our Orchestrated Engine
+                        # Phase 1 & 2: Generation + BERT Scoring
                         hook = generate_creative_assets(trend['llm_prompt_template'])
-                        
-                        # 2. Extract specific BERT score for display
-                        # This shows the user the 'Intelligence' in real-time
                         quality_score = get_critic_score(hook)
                         
+                        # Store in session state to persist through feedback clicks
                         st.session_state[f"hook_{unique_key}"] = hook
                         st.session_state[f"score_{unique_key}"] = quality_score
 
-                # Display Results if they exist in state
+                # --- Results & Feedback Section ---
                 if f"hook_{unique_key}" in st.session_state:
+                    hook = st.session_state[f"hook_{unique_key}"]
                     score = st.session_state[f"score_{unique_key}"]
                     
                     st.markdown("---")
                     st.success("**Top Selection via BERT Critic:**")
-                    st.info(st.session_state[f"hook_{unique_key}"])
+                    st.info(hook)
                     
-                    # Visual feedback for the BERT score
+                    # Sentiment/Quality Indicator
                     progress_color = "green" if score > 0.7 else "orange" if score > 0.4 else "red"
-                    st.markdown(f"**BERT Quality Confidence:** :{progress_color}[{score:.2%}]")
+                    st.markdown(f"**BERT Confidence Score:** :{progress_color}[{score:.2%}]")
                     st.progress(score)
                     
-                    if st.button("👍 Log as Good", key=f"up_{unique_key}"):
-                        st.toast("Feedback saved for next BERT retraining run!", icon="🧠")
-                        # Here you would call a function to insert into gold.human_feedback
+                    # Human-in-the-Loop Feedback Buttons
+                    fb_col1, fb_col2 = st.columns(2)
+                    
+                    if fb_col1.button("👍 Approved", key=f"up_{unique_key}", use_container_width=True):
+                        if save_feedback(trend['prompt_id'], hook, is_good=True):
+                            st.toast("Saved to Training Queue!", icon="🧠")
+                            # Clear state so user can generate again if desired
+                            del st.session_state[f"hook_{unique_key}"]
+                            st.rerun()
+
+                    if fb_col2.button("👎 Rejected", key=f"down_{unique_key}", use_container_width=True):
+                        if save_feedback(trend['prompt_id'], hook, is_good=False):
+                            st.toast("Rejection logged for model tuning.", icon="📉")
+                            del st.session_state[f"hook_{unique_key}"]
+                            st.rerun()
 
 if __name__ == "__main__":
     show_discovery()
