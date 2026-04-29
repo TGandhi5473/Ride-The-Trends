@@ -89,5 +89,5 @@ Ride-The-Trends/
 🏛️ Architectural Integrity
 This project is built with a "Production-First" mindset. For a deep dive into the trade-offs made regarding API safety, data governance, and CI/CD costs, see DECISIONS.md
 └── requirements.txt          # Production Dependencies
-🏛️ Architectural Integrity
-This project is built with a "Production-First" mindset. For a deep dive into the trade-offs made regarding API safety, data governance, and CI/CD costs, see DECISIONS.md.
+Downstream Integration:
+The fct_creative_prompts output is formatted as a structured payload (JSON) designed for headless consumption. This allows secondary AI video agents (e.g., SeedDance) to pick up these "Validated Hooks" and generate visual assets without human intervention, completing the loop from Trend to Content.
