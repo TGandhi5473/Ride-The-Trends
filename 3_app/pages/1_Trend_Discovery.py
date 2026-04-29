@@ -57,7 +57,7 @@ def show_discovery():
                 # Metadata Badges
                 m1, m2, m3 = st.columns(3)
                 m1.metric("Confidence", trend['confidence_level'])
-                m2.metric("Heat Score", f"{trend.get('heat_score', 0)}/100")
+                m2.metric("Optimized Score", f"{trend.get('optimized_score', 0):.2f}")
                 m3.metric("Status", "Validated" if trend['confidence_level'] != 'Low' else "Draft")
                 
                 with st.expander("🔍 View Prompt Logic"):
