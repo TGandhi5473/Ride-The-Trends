@@ -1,32 +1,34 @@
 import streamlit as st
 import pandas as pd
-from core import fetch_gold_prompts  # Centralized logic we built earlier
-from utils.llm_engine import generate_creative_assets
+from core.database import get_neon_engine
+from utils.llm_engine import generate_creative_assets, get_critic_score
 
 st.set_page_config(page_title="Trend Discovery", page_icon="🎯", layout="wide")
 
+def fetch_gold_prompts():
+    """Helper to pull validated data from the Gold Layer."""
+    engine = get_neon_engine()
+    # Pulling from the specialized Marts view
+    query = "SELECT * FROM analytics.fct_creative_prompts ORDER BY validated_at DESC"
+    try:
+        return pd.read_sql(query, engine)
+    except Exception as e:
+        st.error(f"DB Error: {e}")
+        return pd.DataFrame()
+
 def show_discovery():
     st.title("🎯 Validated Trend Discovery")
-    st.markdown("""
-        This view pulls from the **Gold Layer** (analytics.fct_creative_prompts). 
-        These trends have been cross-validated via dbt and are ready for creative enrichment.
-    """)
+    st.markdown("---")
 
-    # 1. Fetch from Gold Layer (Actual Database Call)
-    with st.spinner("Fetching validated trends from Neon..."):
-        trends_data = fetch_gold_prompts()
+    df = fetch_gold_prompts()
 
-    if not trends_data:
-        st.warning("No validated trends found in the Gold layer. Run your dbt pipeline to populate this view.")
+    if df.empty:
+        st.warning("No validated trends found. Check your dbt/Ingestion pipelines.")
         return
 
-    # Convert to DataFrame for easy filtering/sorting if needed
-    df = pd.DataFrame(trends_data)
-
-    # UI Layout: Iterating through validated trends
     for _, trend in df.iterrows():
-        # Using the unique topic + platform combination for the button key
-        unique_key = f"{trend['target_topic']}_{trend.get('platform', 'cross-platform')}"
+        # Create a unique key for the button to prevent state conflicts
+        unique_key = f"btn_{trend['prompt_id']}"
         
         with st.container(border=True):
             col1, col2 = st.columns([3, 1])
@@ -34,30 +36,47 @@ def show_discovery():
             with col1:
                 st.subheader(f"Topic: {trend['target_topic']}")
                 
-                # Metadata Badges
-                c1, c2, c3 = st.columns(3)
-                c1.metric("Confidence", trend['confidence_level'])
-                c2.metric("Source", trend.get('platform', 'Multi').title())
-                if 'heat_score' in trend:
-                    c3.metric("Heat Score", f"{trend['heat_score']}/100")
+                # Metadata Metrics
+                m1, m2, m3 = st.columns(3)
+                m1.metric("Confidence", trend['confidence_level'])
+                m2.metric("Heat Score", f"{trend.get('heat_score', 0)}/100")
+                m3.metric("Status", "Validated" if trend['confidence_level'] != 'Low' else "Draft")
                 
-                with st.expander("View Raw Prompt Template"):
+                with st.expander("🔍 Show Logic & Prompt Template"):
+                    st.caption("This template is fed into Ollama 1B for hook generation.")
                     st.code(trend['llm_prompt_template'], language="markdown")
             
             with col2:
-                st.write("### Actions")
-                if st.button("✨ Generate Hooks", key=unique_key):
-                    with st.spinner("Local LLM (Ollama) is orchestrating creative..."):
-                        # Last-mile enrichment using local inference
-                        enriched_content = generate_creative_assets(trend['llm_prompt_template'])
+                st.write("### AI Orchestration")
+                if st.button("✨ Generate & Validate", key=unique_key, use_container_width=True):
+                    with st.spinner("Ollama (Actor) + BERT (Critic) working..."):
                         
-                        if enriched_content:
-                            st.toast("Hooks Generated!", icon="✅")
-                            st.markdown("---")
-                            st.markdown("**Creative Output:**")
-                            st.write(enriched_content)
-                        else:
-                            st.error("Failed to generate hooks. Is Ollama running?")
+                        # 1. Generate via our Orchestrated Engine
+                        hook = generate_creative_assets(trend['llm_prompt_template'])
+                        
+                        # 2. Extract specific BERT score for display
+                        # This shows the user the 'Intelligence' in real-time
+                        quality_score = get_critic_score(hook)
+                        
+                        st.session_state[f"hook_{unique_key}"] = hook
+                        st.session_state[f"score_{unique_key}"] = quality_score
+
+                # Display Results if they exist in state
+                if f"hook_{unique_key}" in st.session_state:
+                    score = st.session_state[f"score_{unique_key}"]
+                    
+                    st.markdown("---")
+                    st.success("**Top Selection via BERT Critic:**")
+                    st.info(st.session_state[f"hook_{unique_key}"])
+                    
+                    # Visual feedback for the BERT score
+                    progress_color = "green" if score > 0.7 else "orange" if score > 0.4 else "red"
+                    st.markdown(f"**BERT Quality Confidence:** :{progress_color}[{score:.2%}]")
+                    st.progress(score)
+                    
+                    if st.button("👍 Log as Good", key=f"up_{unique_key}"):
+                        st.toast("Feedback saved for next BERT retraining run!", icon="🧠")
+                        # Here you would call a function to insert into gold.human_feedback
 
 if __name__ == "__main__":
     show_discovery()
